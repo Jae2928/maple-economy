@@ -20,17 +20,17 @@ export default function NavBar() {
       </div>
 
       {/* 🔥 중앙 네비 */}
-      <nav className={`${styles["nav-links"]} hidden md:flex`}>
+      <nav className={`${styles["nav-links"]} flex`}>
         <Link
           href="/"
           className={`${styles["nav-btn"]} ${
             isHome ? styles["nav-btn-active"] : ""
-          }`}
+          } hidden md:flex`}
         >
           홈
         </Link>
 
-        <button className={styles["nav-btn"]}>캐릭터 템 가격</button>
+        <button className={`${styles["nav-btn"]} hidden md:inline-flex`}>캐릭터 템 가격</button>
 
         <Link
           href="/dropmeso"
@@ -41,10 +41,10 @@ export default function NavBar() {
           드/메 템 맞추기
         </Link>
 
-        <button className={styles["nav-btn"]}>전투력 올리기</button>
+        <button className={`${styles["nav-btn"]} hidden md:inline-flex`}>전투력 올리기</button>
       </nav>
 
-      <button className="bg-gray-800 p-1.5 rounded-md md:hidden">
+      {/* <button className="bg-gray-800 p-1.5 rounded-md md:hidden">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
@@ -59,7 +59,7 @@ export default function NavBar() {
         d="M3.75 5.25h16.5M3.75 12h16.5M3.75 18.75h16.5"
           />
         </svg>
-      </button>
+      </button> */}
 
       {/* 🔥 우측 문의 버튼 */}
       {/* <div className={styles["nav-right"]}>

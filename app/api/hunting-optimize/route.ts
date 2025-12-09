@@ -108,6 +108,15 @@ const SLOT_ORDER: EquipmentSlotKey[] = [
   "펜던트2",
 ];
 
+// 🔹 슬롯 그룹별 (drop, meso) 조합당 최대 개수
+const LIMIT_PER_SLOT_GROUP: Record<SlotGroup, number> = {
+  RING: 6,
+  PENDANT: 4,
+  EYE: 3,
+  FACE: 3,
+  EARRING: 3,
+};
+
 // ---- DB 후보 불러오기 (Supabase / Postgres 버전) ----
 
 async function loadCandidatesForSlot(
@@ -131,27 +140,44 @@ async function loadCandidatesForSlot(
   const max_date = dateRows[0]?.max_date;
   if (!max_date) return [];
 
-  // 2) 최신 날짜 기준 필터링
+  // 2) 슬롯 그룹별 제한 개수
+  const cap = LIMIT_PER_SLOT_GROUP[slotGroup] ?? 3;
+
+  // 3) 최신 날짜 기준 + 조건 + (drop, meso) 조합당 cap개까지 가져오는 쿼리
   let sql = `
-    SELECT *
-    FROM drop_meso
-    WHERE slot_group = $1
-      AND date = $2
+    WITH ranked AS (
+      SELECT
+        d.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY d.drop_pct, d.meso_pct
+          ORDER BY d.price ASC
+        ) AS rn
+      FROM drop_meso d
+      WHERE d.slot_group = $1
+        AND d.date       = $2
   `;
   const params: any[] = [slotGroup, max_date];
 
   if (jobGroup && jobGroup !== "ALL") {
-    sql += ` AND (job_group = 'ALL' OR job_group = $3)`;
+    sql += ` AND (d.job_group = 'ALL' OR d.job_group = $${params.length + 1})`;
     params.push(jobGroup);
   } else {
-    sql += ` AND job_group = 'ALL'`;
+    sql += ` AND d.job_group = 'ALL'`;
   }
 
   if (excludeKarma) {
-    sql += ` AND karma_scissors = 0`;
+    sql += ` AND d.karma_scissors = 0`;
   }
 
-  sql += ` AND (drop_pct > 0 OR meso_pct > 0)`;
+  sql += `
+        AND (d.drop_pct > 0 OR d.meso_pct > 0)
+    )
+    SELECT *
+    FROM ranked
+    WHERE rn <= $${params.length + 1}
+  `;
+
+  params.push(cap);
 
   const result = await pool.query(sql, params);
   const rows = result.rows as DbItemRow[];
@@ -197,36 +223,6 @@ function filterDominated(list: Candidate[]): Candidate[] {
     }
     if (!dominated) result.push(a);
   }
-  return result;
-}
-
-function limitPerStatBySlotGroup(
-  list: Candidate[],
-  slotGroup: SlotGroup
-): Candidate[] {
-  const LIMIT: Record<SlotGroup, number> = {
-    RING: 6,
-    PENDANT: 4,
-    EYE: 3,
-    FACE: 3,
-    EARRING: 3,
-  };
-  const cap = LIMIT[slotGroup] ?? 3;
-
-  const grouped = new Map<string, Candidate[]>();
-
-  for (const c of list) {
-    const key = `${c.finalDrop}|${c.finalMeso}`;
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(c);
-  }
-
-  const result: Candidate[] = [];
-  for (const arr of grouped.values()) {
-    arr.sort((a, b) => a.price - b.price);
-    result.push(...arr.slice(0, cap));
-  }
-
   return result;
 }
 
@@ -323,8 +319,7 @@ export async function POST(req: NextRequest) {
 
       let refined = dedupeSameSpecByCheapest(candidates);
       refined = filterDominated(refined);
-      refined = limitPerStatBySlotGroup(refined, slotGroup);
-
+      // 🔥 (drop, meso) 조합당 개수 제한은 DB에서 이미 처리했으므로 여기선 호출 필요 없음
       refined.sort((a, b) => a.price - b.price);
 
       slotCandidates.push(refined);

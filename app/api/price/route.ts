@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 // 🔹 서버 전용 Supabase 클라이언트
 const supabase = createClient(
   process.env.SUPABASE_URL!,          // vercel–supabase 연동으로 생긴 값
-  process.env.SUPABASE_URL_ANON_KEY!  // anon key (읽기만 할 거면 이걸로 충분)
+  process.env.SUPABASE_ANON_KEY!  // anon key (읽기만 할 거면 이걸로 충분)
 );
 
 export async function GET(_req: NextRequest) {

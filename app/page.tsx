@@ -339,10 +339,7 @@ export default function Home() {
 
   const getGroupDatasets = (groupName: string): Dataset[] => {
     const targetItems = groupDefs[groupName] || [];
-    return allDatasets.filter((ds) => {
-      console.log("dataset entry:", ds);
-      return targetItems.includes(ds.label);
-    });
+    return allDatasets.filter((ds) => targetItems.includes(ds.label));
   };
 
   const chilheukDatasets = getGroupDatasets("칠흑");

@@ -1,9 +1,9 @@
-// app/api/price/route.ts (예시 경로)
+// app/api/price/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 import { Pool } from "pg";
 
-export const runtime = "nodejs"; // 🔹 pg는 무조건 node 런타임에서
+export const runtime = "nodejs"; // 🔹 pg는 node 런타임에서만
 
 // ─────────────────────────────────────────────
 // 1. 환경 변수/커넥션 문자열 디버그
@@ -11,22 +11,25 @@ export const runtime = "nodejs"; // 🔹 pg는 무조건 node 런타임에서
 
 const rawConnectionString = process.env.SUPABASE_DB_URL;
 
-function maskConnectionString(cs?: string) {
+function maskConnectionString(cs?: string): string | undefined {
   if (!cs) return undefined;
   // 비밀번호 부분만 **** 로 마스킹
   return cs.replace(/(:)([^:@]+)(@)/, (_m, p1, _pw, p3) => `${p1}****${p3}`);
 }
+
+const masked = maskConnectionString(rawConnectionString);
 
 if (!rawConnectionString) {
   console.error("[/api/price] ❌ SUPABASE_DB_URL is NOT set");
 } else {
   console.log(
     "[/api/price] ✅ SUPABASE_DB_URL is set:",
-    maskConnectionString(rawConnectionString).slice(0, 60) // 앞부분만
+    masked ? masked.slice(0, 60) : "undefined"
   );
 }
 
-const pool = rawConnectionString
+// Pool을 any로 두면 타입 에러 없이 디버깅 가능
+const pool: any = rawConnectionString
   ? new Pool({
       connectionString: rawConnectionString,
       ssl: { rejectUnauthorized: false },
@@ -56,20 +59,14 @@ export async function GET(_req: NextRequest) {
 
     // ── (A) 헬스 체크 쿼리 ──────────────────────
     console.log("[/api/price] STEP 2: running health check query...");
-    const health = await client.query<{
-      db: string;
-      user: string;
-    }>("SELECT current_database() AS db, current_user AS user");
-
-    console.log("[/api/price] STEP 2 OK: health =", health.rows[0]);
+    const health: any = await client.query(
+      "SELECT current_database() AS db, current_user AS user"
+    );
+    console.log("[/api/price] STEP 2 OK: health =", health?.rows?.[0]);
 
     // ── (B) 실제 price_history 쿼리 ────────────
     console.log("[/api/price] STEP 3: running main query on price_history...");
-    const result = await client.query<{
-      name: string;
-      price: number;
-      date: string;
-    }>(`
+    const result: any = await client.query(`
       SELECT
         name,
         price,
@@ -79,26 +76,30 @@ export async function GET(_req: NextRequest) {
       LIMIT 100
     `);
 
-    console.log(
-      "[/api/price] STEP 3 OK: rowCount =",
-      result.rowCount
-    );
+    const rowCount =
+      typeof result?.rowCount === "number"
+        ? result.rowCount
+        : Array.isArray(result?.rows)
+        ? result.rows.length
+        : 0;
+
+    console.log("[/api/price] STEP 3 OK: rowCount =", rowCount);
 
     return NextResponse.json(
       {
-        data: result.rows,
+        data: result.rows ?? [],
         meta: {
-          rowCount: result.rowCount,
-          health: health.rows[0],
+          rowCount,
+          health: health?.rows?.[0],
         },
       },
       { status: 200 }
     );
   } catch (e: any) {
-    console.error("[/api/price] ❌ ERROR name :", e?.name);
-    console.error("[/api/price] ❌ ERROR code :", e?.code);
+    console.error("[/api/price] ❌ ERROR name    :", e?.name);
+    console.error("[/api/price] ❌ ERROR code    :", e?.code);
     console.error("[/api/price] ❌ ERROR message :", e?.message);
-    console.error("[/api/price] ❌ ERROR stack :", e?.stack);
+    console.error("[/api/price] ❌ ERROR stack   :", e?.stack);
 
     return NextResponse.json(
       {

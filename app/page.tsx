@@ -167,6 +167,14 @@ export default function Home() {
   const [marketHistory, setMarketHistory] = useState<MesoPoint[]>([]);
   const [mesoModalOpen, setMesoModalOpen] = useState(false);
 
+  // ====== 날짜 범위 선택 상태 (칠흑, 에테르넬, 시드링) ======
+  const [chilheukDateStart, setchilheukDateStart] = useState<string>("");
+  const [chilheukDateEnd, setchilheukDateEnd] = useState<string>("");
+  const [eternelDateStart, setEternelDateStart] = useState<string>("");
+  const [eternelDateEnd, setEternelDateEnd] = useState<string>("");
+  const [seedRingDateStart, setSeedRingDateStart] = useState<string>("");
+  const [seedRingDateEnd, setSeedRingDateEnd] = useState<string>("");
+
   // Legend 숨김
   const [hiddenLabels, setHiddenLabels] = useState<Set<string>>(new Set());
 
@@ -331,7 +339,10 @@ export default function Home() {
 
   const getGroupDatasets = (groupName: string): Dataset[] => {
     const targetItems = groupDefs[groupName] || [];
-    return allDatasets.filter((ds) => targetItems.includes(ds.label));
+    return allDatasets.filter((ds) => {
+      console.log("dataset entry:", ds);
+      return targetItems.includes(ds.label);
+    });
   };
 
   const chilheukDatasets = getGroupDatasets("칠흑");
@@ -697,6 +708,28 @@ export default function Home() {
                 options={lineOptions}
               />
             )}
+
+            {/* (칠흑) 데이터 날짜 범위 설정 캘린더 팝업 */}
+            <div className="mt-8 w-full flex justify-end gap-3">
+              <div>
+                <label className="mr-4">시작 날짜:</label>
+                <input
+                  type="date"
+                  value={chilheukDateStart}
+                  onChange={(e) => setchilheukDateStart(e.target.value)}
+                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="mr-4">종료 날짜:</label>
+                <input
+                  type="date"
+                  value={chilheukDateEnd}
+                  onChange={(e) => setchilheukDateEnd(e.target.value)}
+                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
           </section>
 
           {/* 에테르넬 세트 */}
@@ -735,6 +768,28 @@ export default function Home() {
                 options={lineOptions}
               />
             )}
+
+            {/* (에테르넬) 데이터 날짜 범위 설정 캘린더 팝업 */}
+            <div className="mt-8 w-full flex justify-end gap-3">
+              <div>
+                <label className="mr-4">시작 날짜:</label>
+                <input
+                  type="date"
+                  value={eternelDateStart}
+                  onChange={(e) => setEternelDateStart(e.target.value)}
+                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="mr-4">종료 날짜:</label>
+                <input
+                  type="date"
+                  value={eternelDateEnd}
+                  onChange={(e) => setEternelDateEnd(e.target.value)}
+                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
           </section>
 
           {/* 시드링 세트 */}
@@ -773,6 +828,28 @@ export default function Home() {
                 options={lineOptions}
               />
             )}
+
+            {/* (시드링) 데이터 날짜 범위 설정 캘린더 팝업 */}
+            <div className="mt-8 w-full flex justify-end gap-3">
+              <div>
+                <label className="mr-4">시작 날짜:</label>
+                <input
+                  type="date"
+                  value={seedRingDateStart}
+                  onChange={(e) => setSeedRingDateStart(e.target.value)}
+                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="mr-4">종료 날짜:</label>
+                <input
+                  type="date"
+                  value={seedRingDateEnd}
+                  onChange={(e) => setSeedRingDateEnd(e.target.value)}
+                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
           </section>
         </div>
       </section>

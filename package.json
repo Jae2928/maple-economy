@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "git-refresh": "git lfs update --force && git rm -rf --cached . && git add ."
   },
   "dependencies": {
     "axios": "^1.13.2",

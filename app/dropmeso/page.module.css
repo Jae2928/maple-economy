@@ -64,7 +64,9 @@
 
 .cardStep {
   width: 24px;
+  min-width: 24px;
   height: 24px;
+  min-height: 24px;
   border-radius: 999px;
   background: linear-gradient(135deg, #22c55e, #22d3ee);
   color: #020617;

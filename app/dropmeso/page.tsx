@@ -409,11 +409,10 @@ export default function DropMesoPage() {
           </div>
         </section>
 
-        <section className={styles.layout}>
+        <section className="grid gap-4 md:grid-cols-7">
           {/* 왼쪽: 캐릭터 / 장비 */}
-          <div className={styles.leftColumn}>
-            {/* 1단계: 캐릭터 장비 불러오기 카드 */}
-            <div className={styles.card}>
+          {/* 1단계: 캐릭터 장비 불러오기 카드 */}
+          <div className={`${styles.card} md:col-span-4 md:order-1`}>
               <div className={styles.cardHeader}>
                 <span className={styles.cardStep}>1</span>
                 <div>
@@ -458,10 +457,10 @@ export default function DropMesoPage() {
                   🔥 감지된 직업군: <b>{characterJobGroup}</b>
                 </div>
               )}
-            </div>
+          </div>
 
-            {/* 1-2단계: 현재 사냥 세팅 */}
-            <div className={styles.card}>
+          {/* 1-2단계: 현재 사냥 세팅 */}
+          <div className={`${styles.card} md:col-span-4 md:order-3`}>
               <div className={styles.cardHeader}>
                 <span className={styles.cardStep}>1-2</span>
                 <div>
@@ -478,16 +477,9 @@ export default function DropMesoPage() {
                 </div>
 
                 {/* 우측 상단: 프리셋 선택 + 모드 전환 버튼 */}
-                <div
-                  style={{
-                    marginLeft: "auto",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
+                <div className="ml-auto flex flex-col items-center gap-2 self-center shrink-0">
                   {!useManualInput && hasFetchedEquip && (
-                    <div style={{ display: "flex", gap: 6 }}>
+                    <div className="w-full flex flex-col gap-2 md:flex-row">
                       {[1, 2, 3].map((no) => {
                         const active = selectedPreset === no;
                         return (
@@ -552,6 +544,7 @@ export default function DropMesoPage() {
                         border: "1px solid rgba(148,163,184,0.5)",
                         color: "#93c5fd",
                         cursor: "pointer",
+                        width: "100%",
                       }}
                       onClick={() => {
                         setUseManualInput(true);
@@ -769,13 +762,11 @@ export default function DropMesoPage() {
                   )}
                 </>
               )}
-            </div>
           </div>
 
           {/* 오른쪽: 목표 / 옵션 / 결과 */}
-          <div className={styles.rightColumn}>
-            {/* 목표 설정 카드 */}
-            <div className={styles.card}>
+          {/* 목표 설정 카드 */}
+          <div className={`${styles.card} md:col-span-3 md:order-2`}>
               <div className={styles.cardHeader}>
                 <span className={styles.cardStep}>2</span>
                 <div>
@@ -843,10 +834,10 @@ export default function DropMesoPage() {
                   추천
                 </span>
               </label>
-            </div>
+          </div>
 
-            {/* 결과 카드 */}
-            <div className={styles.card}>
+          {/* 결과 카드 */}
+          <div className={`${styles.card} md:col-span-3 md:order-last`}>
               <div className={styles.cardHeader}>
                 <span className={styles.cardStep}>3</span>
                 <div>
@@ -940,7 +931,6 @@ export default function DropMesoPage() {
                   )}
                 </div>
               )}
-            </div>
           </div>
         </section>
       </div>

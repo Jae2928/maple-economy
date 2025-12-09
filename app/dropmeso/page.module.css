@@ -1,0 +1,279 @@
+.page {
+  min-height: 100vh;
+  background: radial-gradient(circle at top, #1b2230 0, #05060a 55%);
+  color: #f9fafb;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Noto Sans KR",
+    sans-serif;
+}
+
+.inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 24px 40px;
+}
+
+.header {
+  margin-bottom: 24px;
+}
+
+.breadcrumb {
+  display: inline-block;
+  font-size: 0.8rem;
+  color: #9ca3af;
+  margin-bottom: 4px;
+}
+
+.title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: #d1d5db;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr);
+  gap: 18px;
+}
+
+.leftColumn,
+.rightColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card {
+  background: rgba(15, 23, 42, 0.96);
+  border-radius: 18px;
+  padding: 16px 18px;
+  border: 1px solid rgba(75, 85, 99, 0.7);
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.7);
+}
+
+.cardHeader {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.cardStep {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #22c55e, #22d3ee);
+  color: #020617;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.cardTitle {
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.cardDesc {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.label {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.input,
+.select {
+  border-radius: 10px;
+  border: 1px solid rgba(75, 85, 99, 0.9);
+  background: #020617;
+  color: #f9fafb;
+  padding: 6px 10px;
+  font-size: 0.86rem;
+  outline: none;
+}
+
+.input:focus,
+.select:focus {
+  border-color: #38bdf8;
+}
+
+.primaryButton {
+  width: 100%;
+  border-radius: 999px;
+  border: none;
+  padding: 9px 0;
+  margin-top: 4px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+  color: #f9fafb;
+}
+
+.primaryButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.errorText {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: #fca5a5;
+}
+
+.sectionDivider {
+  height: 1px;
+  margin: 12px 0;
+  background: rgba(55, 65, 81, 0.9);
+}
+
+.sectionTitle {
+  font-size: 0.86rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.smallText {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.emptyState {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px dashed rgba(75, 85, 99, 0.8);
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.tableWrapper {
+  margin-top: 8px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(55, 65, 81, 0.9);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.table thead {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.table th,
+.table td {
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.table th {
+  font-weight: 600;
+  color: #9ca3af;
+  border-bottom: 1px solid rgba(55, 65, 81, 0.9);
+}
+
+.table tbody tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.table tbody tr:nth-child(odd) {
+  background: rgba(17, 24, 39, 0.9);
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: #e5e7eb;
+}
+
+.checkboxLabel input {
+  accent-color: #22c55e;
+}
+
+.statsRow {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.statBox {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statLabel {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.statValue {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.needText {
+  font-size: 0.78rem;
+  color: #a5b4fc;
+}
+
+.resultPanel {
+  margin-top: 10px;
+}
+
+.resultSummary {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.resultSummary > div {
+  flex: 1;
+  min-width: 120px;
+}
+
+.resultLabel {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.resultValue {
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .inner {
+    padding: 16px;
+  }
+}

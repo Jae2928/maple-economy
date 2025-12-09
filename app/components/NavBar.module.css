@@ -1,0 +1,87 @@
+.top-nav {
+  height: 56px;
+  padding: 0 32px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(3, 7, 18, 0.96);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  color: #f9fafb;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Noto Sans KR", sans-serif;
+}
+
+.nav-left {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.logo {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-size: 1rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.nav-links {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  gap: 10px;
+}
+
+.nav-right {
+  display: flex;
+  gap: 8px;
+}
+
+.small-btn {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.9rem;
+  border: none;
+  cursor: pointer;
+  background: #111827;
+  color: #e5e7eb;
+}
+
+/* outline 스타일 */
+.outline {
+  background: transparent;
+  border: 1px solid rgba(229, 231, 235, 0.8);
+}
+
+.nav-btn {
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  text-decoration: none; /* Link용 */
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-btn-active {
+  color: #e5e7eb;
+  background: linear-gradient(135deg, #14b8a6, #6366f1);
+}
+
+@media (max-width: 900px) {
+  .top-nav {
+    padding: 0 16px;
+  }
+
+  .nav-links {
+    position: static;
+    transform: none;
+    margin: 0 12px;
+  }
+}

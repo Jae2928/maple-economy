@@ -7,16 +7,47 @@ export const runtime = "nodejs";
 
 // 🔹 서버 전용 Supabase 클라이언트
 const supabase = createClient(
-  process.env.SUPABASE_URL!,          // vercel–supabase 연동으로 생긴 값
-  process.env.SUPABASE_ANON_KEY!  // anon key (읽기만 할 거면 이걸로 충분)
+  process.env.SUPABASE_URL!, // vercel–supabase 연동으로 생긴 값
+  process.env.SUPABASE_ANON_KEY! // anon key (읽기만 할 거면 이걸로 충분)
 );
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
-    const { data, error } = await supabase
+    const { searchParams } = new URL(req.url);
+
+    const startDate = searchParams.get("startDate"); // YYYY-MM-DD
+    const endDate = searchParams.get("endDate");     // YYYY-MM-DD
+    const namesParam = searchParams.get("names");    // "아이템1,아이템2,..."
+
+    // 기본 쿼리
+    let query = supabase
       .from("price_history")
-      .select("name, price, date")
-      .order("date", { ascending: true });
+      .select("name, price, date");
+
+    // 🔹 날짜 범위 필터 (있을 때만 적용)
+    if (startDate) {
+      query = query.gte("date", startDate);
+    }
+    if (endDate) {
+      query = query.lte("date", endDate);
+    }
+
+    // 🔹 name IN (...) 필터 (있을 때만 적용)
+    if (namesParam) {
+      const names = namesParam
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      if (names.length > 0) {
+        query = query.in("name", names);
+      }
+    }
+
+    // 🔹 날짜 기준 정렬 (오래된 → 최신)
+    query = query.order("date", { ascending: true });
+
+    const { data, error } = await query;
 
     if (error) {
       console.error("[/api/price] supabase error:", error);
@@ -26,7 +57,6 @@ export async function GET(_req: NextRequest) {
       );
     }
 
-    // date 포맷을 클라이언트에서 바꿔도 되고, 여기서 문자열 처리해도 됨
     return NextResponse.json({ data }, { status: 200 });
   } catch (e: any) {
     console.error("[/api/price] unexpected error:", e);

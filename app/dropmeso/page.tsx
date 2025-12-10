@@ -910,19 +910,25 @@ export default function DropMesoPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {result.itemsToBuy.map((item, idx) => (
+                        {/** ⬇️ 여기서 정렬해서 사용 */}
+                        {[...result.itemsToBuy]
+                          .sort((a, b) => {
+                            // 1) 얼굴장식은 항상 맨 위
+                            if (a.slot === "얼굴장식" && b.slot !== "얼굴장식") return -1;
+                            if (b.slot === "얼굴장식" && a.slot !== "얼굴장식") return 1;
+
+                            // 2) 나머지는 ALL_SLOTS 순서대로
+                            return (
+                              ALL_SLOTS.indexOf(a.slot) - ALL_SLOTS.indexOf(b.slot)
+                            );
+                          })
+                          .map((item, idx) => (
                             <tr key={`${item.slot}-${idx}`}>
                               <td>{SLOT_LABEL[item.slot]}</td>
                               <td>{item.name}</td>
-                              <td>
-                                {item.dropPct ? `${item.dropPct}%` : "-"}
-                              </td>
-                              <td>
-                                {item.mesoPct ? `${item.mesoPct}%` : "-"}
-                              </td>
-                              <td>
-                                {item.price.toLocaleString("ko-KR")} 메소
-                              </td>
+                              <td>{item.dropPct ? `${item.dropPct}%` : "-"}</td>
+                              <td>{item.mesoPct ? `${item.mesoPct}%` : "-"}</td>
+                              <td>{item.price.toLocaleString("ko-KR")} 메소</td>
                             </tr>
                           ))}
                         </tbody>

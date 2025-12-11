@@ -400,10 +400,10 @@ export default function DropMesoPage() {
         {/* 헤더 */}
         <section className={styles.header}>
           <div>
-            <div className={styles.breadcrumb}>드/메 템 맞추기</div>
-            <h1 className={styles.title}>사냥용 드랍/메획 세팅 계산기</h1>
+            <div className={styles.breadcrumb}></div>
+            <h1 className={styles.title}>드랍/메획 세팅 계산기</h1>
             <p className={styles.subtitle}>
-              현재 장비를 기준으로, 목표 아이템 드랍률 · 메소 획득량을 가장
+              현재 착용중인 장비나 직접 설정한 수치를 기준으로, 목표 아이템 드랍률 · 메소 획득량을 가장
               저렴한 조합으로 맞춰주는 도우미입니다.
             </p>
           </div>
@@ -418,8 +418,9 @@ export default function DropMesoPage() {
                 <div>
                   <div className={styles.cardTitle}>캐릭터 장비 불러오기</div>
                   <div className={styles.cardDesc}>
-                    넥슨 Open API를 통해 현재 장착 중인 사냥 템 프리셋을
-                    불러옵니다. (원치 않으면 아래에서 직접 입력도 가능합니다.)
+                    넥슨 Open API를 통해 현재 장착 중인 사냥 템 프리셋을 불러옵니다. 
+                    <br></br>
+                    (원치 않으면 아래에서 직접 입력도 가능합니다.)
                   </div>
                 </div>
               </div>
@@ -430,7 +431,7 @@ export default function DropMesoPage() {
                   className={styles.input}
                   value={characterName}
                   onChange={(e) => setCharacterName(e.target.value)}
-                  placeholder="예: 건물부수는워리어"
+                  placeholder="예: 앙헤카톤의주"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -454,7 +455,6 @@ export default function DropMesoPage() {
 
               {!useManualInput && characterJobGroup && (
                 <div className={styles.smallText} style={{ marginTop: 8 }}>
-                  🔥 감지된 직업군: <b>{characterJobGroup}</b>
                 </div>
               )}
           </div>
@@ -563,14 +563,16 @@ export default function DropMesoPage() {
                 <>
                   <p className={styles.smallText}>
                     각 슬롯에 현재 착용 중인 아이템의 드랍률 · 메소 획득량을
-                    입력하세요. 드랍/메획이 0%여도, &quot;해당 아이템 사용&quot;
-                    체크 시 해당 슬롯은 고정되고, 나머지 슬롯에서만 부족한
+                    입력하세요. <br></br>
+                    드랍/메획이 0%여도, &quot;해당 아이템 사용&quot;
+                    체크 시 해당 슬롯은 고정되고, <br></br>
+                    나머지 슬롯에서만 부족한
                     수치를 맞춥니다.
                   </p>
 
                   {/* 🔥 수동 입력용 직업군 선택 */}
                   <div className={styles.formRow}>
-                    <label className={styles.label}>직업군 (수동 입력용)</label>
+                    <label className={styles.label}>직업군 선택 *필수</label>
                     <select
                       className={styles.input}
                       value={manualJobGroup}
@@ -830,8 +832,7 @@ export default function DropMesoPage() {
                   onChange={(e) => setExcludeKarma(e.target.checked)}
                 />
                 <span>
-                  카르마의 가위를 사용해야 하는 템(karma_scissors)을 제외하고
-                  추천
+                  가위 횟수 제한 달린 템을 제외하고 추천 (영구 교환가능 템만 추천)
                 </span>
               </label>
           </div>
@@ -844,7 +845,7 @@ export default function DropMesoPage() {
                   <div className={styles.cardTitle}>최저 비용 세팅 계산</div>
                   <div className={styles.cardDesc}>
                     DB에 저장된 시세를 바탕으로, 가장 적은 비용으로 목표를
-                    만족하는 조합을 찾습니다.
+                    만족하는 조합을 찾습니다. 최대 2분까지 소요될 수 있습니다.
                   </div>
                 </div>
               </div>
@@ -861,8 +862,8 @@ export default function DropMesoPage() {
 
               {!result && !optError && (
                 <p className={styles.smallText}>
-                  계산 버튼을 누르면, 새로 구매해야 하는 아이템과 예상 총 비용이
-                  여기 표시됩니다.
+                  <br></br>
+                  계산 버튼을 누르면, 새로 구매해야 하는 아이템과 비용이 여기 표시됩니다.
                 </p>
               )}
 
@@ -910,19 +911,25 @@ export default function DropMesoPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {result.itemsToBuy.map((item, idx) => (
+                        {/** ⬇️ 여기서 정렬해서 사용 */}
+                        {[...result.itemsToBuy]
+                          .sort((a, b) => {
+                            // 1) 얼굴장식은 항상 맨 위
+                            if (a.slot === "얼굴장식" && b.slot !== "얼굴장식") return -1;
+                            if (b.slot === "얼굴장식" && a.slot !== "얼굴장식") return 1;
+
+                            // 2) 나머지는 ALL_SLOTS 순서대로
+                            return (
+                              ALL_SLOTS.indexOf(a.slot) - ALL_SLOTS.indexOf(b.slot)
+                            );
+                          })
+                          .map((item, idx) => (
                             <tr key={`${item.slot}-${idx}`}>
                               <td>{SLOT_LABEL[item.slot]}</td>
                               <td>{item.name}</td>
-                              <td>
-                                {item.dropPct ? `${item.dropPct}%` : "-"}
-                              </td>
-                              <td>
-                                {item.mesoPct ? `${item.mesoPct}%` : "-"}
-                              </td>
-                              <td>
-                                {item.price.toLocaleString("ko-KR")} 메소
-                              </td>
+                              <td>{item.dropPct ? `${item.dropPct}%` : "-"}</td>
+                              <td>{item.mesoPct ? `${item.mesoPct}%` : "-"}</td>
+                              <td>{item.price.toLocaleString("ko-KR")} 메소</td>
                             </tr>
                           ))}
                         </tbody>

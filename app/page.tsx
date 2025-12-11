@@ -47,7 +47,7 @@ type NoticeRow = {
   id: number;
   type: "NEWS" | "UPDATE" | "NOTICE";
   title: string;
-  summary: string;
+  content: string;          // 🔹 summary → content
   createdAt: string;
 };
 
@@ -58,7 +58,7 @@ type NewsItem = {
   id: number;
   type: NewsType;
   title: string;
-  summary: string;
+  content: string;          // 🔹 summary → content
   createdAt: string;
 };
 
@@ -139,15 +139,55 @@ function ItemLegend({
   );
 }
 
+// ====== 세트별 아이템 그룹 ======
+const groupDefs: Record<string, string[]> = {
+  칠흑: [
+    "거대한 공포",
+    "고통의 근원",
+    "루즈 컨트롤 머신 마크",
+    "마력이 깃든 안대",
+    "몽환의 벨트",
+    "미트라의 분노 : 전사",
+    "블랙 하트",
+    "저주받은 적의 마도서",
+    "창세의 뱃지",
+    "커맨더 포스 이어링",
+    "컴플리트 언더컨트롤",
+  ],
+  에테르넬: [
+    "에테르넬 나이트헬름",
+    "에테르넬 나이트아머",
+    "에테르넬 나이트팬츠",
+    "에테르넬 나이트숄더",
+    "에테르넬 나이트글러브",
+    "에테르넬 나이트슈즈",
+    "에테르넬 나이트케이프",
+  ],
+  시드링: ["리스트레인트 링 LV4", "컨티뉴어스 링 LV4"],
+};
+
+type GroupKey = "칠흑" | "에테르넬" | "시드링";
+
+type GroupState = {
+  labels: string[];
+  datasets: Dataset[];
+};
+
+const emptyGroupState: GroupState = { labels: [], datasets: [] };
+
 export default function Home() {
   // ====== 뉴스 관련 상태 ======
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const [newsModalOpen, setNewsModalOpen] = useState(false);
   const [newsFilter, setNewsFilter] = useState<NewsType | "전체">("전체");
 
-  // ====== 아이템 시세 그래프 상태 ======
-  const [labels, setLabels] = useState<string[]>([]);
-  const [allDatasets, setAllDatasets] = useState<Dataset[] | null>(null);
+  // ====== 아이템 시세 그래프 상태 (그룹별) ======
+  const [chilheukState, setChilheukState] =
+    useState<GroupState>(emptyGroupState);
+  const [eternelState, setEternelState] =
+    useState<GroupState>(emptyGroupState);
+  const [seedRingState, setSeedRingState] =
+    useState<GroupState>(emptyGroupState);
 
   const [showChilheuk, setShowChilheuk] = useState(true);
   const [showEternel, setShowEternel] = useState(true);
@@ -156,7 +196,6 @@ export default function Home() {
   const [searchName, setSearchName] = useState("");
 
   const [latestDate, setLatestDate] = useState<string | null>(null);
-  const [itemCount, setItemCount] = useState<number>(0);
 
   // ====== 요약 카드 + 모달에서 사용할 마켓 정보 ======
   const [selectedMarketItem, setSelectedMarketItem] =
@@ -175,8 +214,10 @@ export default function Home() {
   const [seedRingDateStart, setSeedRingDateStart] = useState<string>("");
   const [seedRingDateEnd, setSeedRingDateEnd] = useState<string>("");
 
-  // Legend 숨김
-  const [hiddenLabels, setHiddenLabels] = useState<Set<string>>(new Set());
+  // 🔥 기본으로 숨길 아이템
+  const [hiddenLabels, setHiddenLabels] = useState<Set<string>>(
+    () => new Set(["창세의 뱃지", "컴플리트 언더컨트롤"])
+  );
 
   const handleToggleLabel = (label: string) => {
     setHiddenLabels((prev) => {
@@ -193,30 +234,63 @@ export default function Home() {
     return `${eok.toFixed(1)}억`;
   };
 
-  // ====== 1) 아이템 시세 (/api/price) ======
+  const colorFor = (label: string) => {
+    let hash = 0;
+    for (let i = 0; i < label.length; i++) {
+      hash = label.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = hash % 360;
+    return `hsl(${hue}, 70%, 55%)`;
+  };
+
+  const formatDate = (d: Date) => d.toISOString().slice(0, 10);
+
+  // ====== 1-1) 최초 로딩 시: 최근 7일 날짜 범위 세팅 ======
   useEffect(() => {
-    axios.get("/api/price").then((res) => {
+    const today = new Date();
+    const end = formatDate(today);
+    const startDate = new Date();
+    startDate.setDate(today.getDate() - 6);
+    const start = formatDate(startDate);
+
+    setchilheukDateStart(start);
+    setchilheukDateEnd(end);
+    setEternelDateStart(start);
+    setEternelDateEnd(end);
+    setSeedRingDateStart(start);
+    setSeedRingDateEnd(end);
+  }, []);
+
+  // ====== 1-2) 그룹별로 /api/price 호출 ======
+  const fetchGroupPrice = async (
+    group: GroupKey,
+    startDate: string,
+    endDate: string
+  ) => {
+    if (!startDate || !endDate) return;
+    if (new Date(startDate) > new Date(endDate)) return;
+
+    const itemNames = groupDefs[group];
+
+    try {
+      const res = await axios.get("/api/price", {
+        params: {
+          startDate,
+          endDate,
+          names: itemNames.join(","),
+        },
+      });
+
       const rows: PriceRow[] = res.data.data;
+      const filteredRows = rows.filter((r) => itemNames.includes(r.name));
 
-      const dateKeys = [...new Set(rows.map((r) => r.date))].sort();
-      setLabels(dateKeys);
-      setLatestDate(dateKeys[dateKeys.length - 1] ?? null);
-
-      const items: string[] = [...new Set(rows.map((r) => r.name))];
-      setItemCount(items.length);
-
-      const colorFor = (label: string) => {
-        let hash = 0;
-        for (let i = 0; i < label.length; i++) {
-          hash = label.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const hue = hash % 360;
-        return `hsl(${hue}, 70%, 55%)`;
-      };
+      const dateKeys = [...new Set(filteredRows.map((r) => r.date))].sort();
+      const items: string[] = [
+        ...new Set(filteredRows.map((r) => r.name)),
+      ].sort();
 
       const datasets: Dataset[] = items.map((itemName: string) => {
-        const itemData = rows.filter((r) => r.name === itemName);
-
+        const itemData = filteredRows.filter((r) => r.name === itemName);
         const dataPerDate = dateKeys.map((dateKey) => {
           const entry = itemData.find((x) => x.date === dateKey);
           return entry ? entry.price : null;
@@ -231,11 +305,46 @@ export default function Home() {
         };
       });
 
-      setAllDatasets(datasets);
-    });
-  }, []);
+      const groupState: GroupState = {
+        labels: dateKeys,
+        datasets,
+      };
 
-  // ====== 2) 마켓 데이터 (/api/etc?item=...) ======
+      if (group === "칠흑") setChilheukState(groupState);
+      else if (group === "에테르넬") setEternelState(groupState);
+      else setSeedRingState(groupState);
+
+      const maxDate = dateKeys[dateKeys.length - 1] ?? null;
+      if (maxDate) {
+        setLatestDate((prev) => {
+          if (!prev) return maxDate;
+          return prev > maxDate ? prev : maxDate;
+        });
+      }
+    } catch (err) {
+      console.error("price fetch error:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (!chilheukDateStart || !chilheukDateEnd) return;
+    fetchGroupPrice("칠흑", chilheukDateStart, chilheukDateEnd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chilheukDateStart, chilheukDateEnd]);
+
+  useEffect(() => {
+    if (!eternelDateStart || !eternelDateEnd) return;
+    fetchGroupPrice("에테르넬", eternelDateStart, eternelDateEnd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eternelDateStart, eternelDateEnd]);
+
+  useEffect(() => {
+    if (!seedRingDateStart || !seedRingDateEnd) return;
+    fetchGroupPrice("시드링", seedRingDateStart, seedRingDateEnd);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedRingDateStart, seedRingDateEnd]);
+
+  // ====== 2) 마켓 데이터 ======
   const fetchMarket = (item: MarketItem) => {
     axios
       .get(`/api/etc?item=${encodeURIComponent(item)}`)
@@ -263,12 +372,10 @@ export default function Home() {
       });
   };
 
-  // 처음엔 메소 마켓 기준으로
   useEffect(() => {
     fetchMarket("메소 마켓");
   }, []);
 
-  // 🔥 ESC 키로 모달 닫기
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" || e.key === "Esc") {
@@ -280,7 +387,7 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // ====== 3) 뉴스 데이터 (/api/notice) ======
+  // ====== 3) 뉴스 데이터 ======
   useEffect(() => {
     axios
       .get("/api/notice")
@@ -291,7 +398,7 @@ export default function Home() {
           id: n.id,
           type: convertType(n.type),
           title: n.title,
-          summary: n.summary,
+          content: n.content,      // 🔹 summary → content
           createdAt: n.createdAt,
         }));
 
@@ -302,7 +409,12 @@ export default function Home() {
       });
   }, []);
 
-  if (!allDatasets || labels.length === 0) {
+  const isPriceLoading =
+    !chilheukState.labels.length &&
+    !eternelState.labels.length &&
+    !seedRingState.labels.length;
+
+  if (isPriceLoading) {
     return (
       <main className={styles.page}>
         <div className={styles.loading}>데이터 불러오는 중...</div>
@@ -310,41 +422,35 @@ export default function Home() {
     );
   }
 
-  // ====== 세트별 아이템 그룹 ======
-  const groupDefs: Record<string, string[]> = {
-    칠흑: [
-      "거대한 공포",
-      "고통의 근원",
-      "루즈 컨트롤 머신 마크",
-      "마력이 깃든 안대",
-      "몽환의 벨트",
-      "미트라의 분노 : 전사",
-      "블랙 하트",
-      "저주받은 적의 마도서",
-      "창세의 뱃지",
-      "커맨더 포스 이어링",
-      "컴플리트 언더컨트롤",
-    ],
-    에테르넬: [
-      "에테르넬 나이트헬름",
-      "에테르넬 나이트아머",
-      "에테르넬 나이트팬츠",
-      "에테르넬 나이트숄더",
-      "에테르넬 나이트글러브",
-      "에테르넬 나이트슈즈",
-      "에테르넬 나이트케이프",
-    ],
-    시드링: ["리스트레인트 링 LV4", "컨티뉴어스 링 LV4"],
-  };
+  // ====== 모두 선택/해제 계산 ======
+  const chilheukLabels = chilheukState.datasets.map((ds) => ds.label);
+  const eternelLabels = eternelState.datasets.map((ds) => ds.label);
+  const seedRingLabels = seedRingState.datasets.map((ds) => ds.label);
 
-  const getGroupDatasets = (groupName: string): Dataset[] => {
-    const targetItems = groupDefs[groupName] || [];
-    return allDatasets.filter((ds) => targetItems.includes(ds.label));
-  };
+  const chilheukAllHidden =
+    chilheukLabels.length > 0 &&
+    chilheukLabels.every((lbl) => hiddenLabels.has(lbl));
+  const eternelAllHidden =
+    eternelLabels.length > 0 &&
+    eternelLabels.every((lbl) => hiddenLabels.has(lbl));
+  const seedRingAllHidden =
+    seedRingLabels.length > 0 &&
+    seedRingLabels.every((lbl) => hiddenLabels.has(lbl));
 
-  const chilheukDatasets = getGroupDatasets("칠흑");
-  const eternelDatasets = getGroupDatasets("에테르넬");
-  const seedRingDatasets = getGroupDatasets("시드링");
+  const toggleAllForLabels = (labels: string[]) => {
+    setHiddenLabels((prev) => {
+      const next = new Set(prev);
+      const allHidden =
+        labels.length > 0 && labels.every((lbl) => next.has(lbl));
+
+      if (allHidden) {
+        labels.forEach((lbl) => next.delete(lbl));
+      } else {
+        labels.forEach((lbl) => next.add(lbl));
+      }
+      return next;
+    });
+  };
 
   // ====== 메인 그래프 옵션 ======
   const lineOptions: any = {
@@ -391,8 +497,8 @@ export default function Home() {
     },
   };
 
-  // ====== 모달 그래프용 데이터 & 옵션 ======
-  const modalLabels = marketHistory.map((p) => p.date.slice(5)); // "MM-DD"
+  // ====== 모달 그래프 ======
+  const modalLabels = marketHistory.map((p) => p.date.slice(5));
   const modalData = marketHistory.map((p) => p.price);
 
   const modalChartOptions: any = {
@@ -452,15 +558,15 @@ export default function Home() {
       <section className={styles.hero}>
         <div className={styles["hero-bg"]} />
         <div className={styles["hero-content"]}>
-          <div className={styles["hero-title"]}>📈 Maple Economy</div>
+          <div className={styles["hero-title"]}>📈 MAPLE ECONOMY</div>
           <div className={styles["hero-sub"]}>
-            칠흑 / 에테르넬 / 시드링 주요 아이템의 시세를 한 눈에.
+            메이플의 각종 경제지표를 한 눈에.
           </div>
 
           <div className={styles["search-box"]}>
             <input
               className={styles["search-input"]}
-              placeholder="추후: 캐릭터 닉네임 또는 아이템 이름으로 검색할 수 있어요."
+              placeholder="캐릭터 닉네임으로 입력 시 드/메 템 맞추기로 이동합니다 (추후 변경 예정)."
               value={searchName}
               onChange={(e) => setSearchName(e.target.value)}
             />
@@ -568,7 +674,7 @@ export default function Home() {
             </ul>
           </div>
 
-          {/* 요약 카드: 선택한 마켓 시세 */}
+          {/* 요약 카드 */}
           <div className={`${styles.card} ${styles["summary-card"]}`}>
             <div className={styles["summary-header-row"]}>
               <img
@@ -587,14 +693,13 @@ export default function Home() {
                   : "솔 에르다 조각 시세"}
               </div>
 
-              {/* 카드 내 토글 버튼 */}
               <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 {["메소 마켓", "솔 에르다 조각"].map((label) => (
                   <button
                     key={label}
                     className={[
-                      styles["news-filter-btn"],        // 기존 스타일 유지
-                      styles["market-toggle-btn"],      // 🔥 추가된 작은 버튼 스타일
+                      styles["news-filter-btn"],
+                      styles["market-toggle-btn"],
                       selectedMarketItem === label
                         ? styles["news-filter-btn-active"]
                         : "",
@@ -679,7 +784,24 @@ export default function Home() {
                   className={styles["set-icon"]}
                 />
                 <h2>칠흑 세트</h2>
+                <button
+                  type="button"
+                  style={{
+                    marginLeft: 8,
+                    fontSize: "0.75rem",
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(148,163,184,0.7)",
+                    background: "transparent",
+                    color: "#e5e7eb",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => toggleAllForLabels(chilheukLabels)}
+                >
+                  {chilheukAllHidden ? "모두 선택" : "모두 해제"}
+                </button>
               </div>
+
               <button
                 className={styles["toggle-btn"]}
                 onClick={() => setShowChilheuk((prev) => !prev)}
@@ -689,7 +811,7 @@ export default function Home() {
             </div>
 
             <ItemLegend
-              datasets={chilheukDatasets}
+              datasets={chilheukState.datasets}
               hiddenLabels={hiddenLabels}
               onToggle={handleToggleLabel}
             />
@@ -697,8 +819,8 @@ export default function Home() {
             {showChilheuk && (
               <Line
                 data={{
-                  labels,
-                  datasets: chilheukDatasets.filter(
+                  labels: chilheukState.labels,
+                  datasets: chilheukState.datasets.filter(
                     (ds) => !hiddenLabels.has(ds.label)
                   ),
                 }}
@@ -706,7 +828,6 @@ export default function Home() {
               />
             )}
 
-            {/* (칠흑) 데이터 날짜 범위 설정 캘린더 팝업 */}
             <div className="mt-8 w-full flex justify-end gap-3">
               <div>
                 <label className="mr-4">시작 날짜:</label>
@@ -739,7 +860,24 @@ export default function Home() {
                   className={styles["set-icon"]}
                 />
                 <h2>에테르넬 세트</h2>
+                <button
+                  type="button"
+                  style={{
+                    marginLeft: 8,
+                    fontSize: "0.75rem",
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(148,163,184,0.7)",
+                    background: "transparent",
+                    color: "#e5e7eb",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => toggleAllForLabels(eternelLabels)}
+                >
+                  {eternelAllHidden ? "모두 선택" : "모두 해제"}
+                </button>
               </div>
+
               <button
                 className={styles["toggle-btn"]}
                 onClick={() => setShowEternel((prev) => !prev)}
@@ -749,7 +887,7 @@ export default function Home() {
             </div>
 
             <ItemLegend
-              datasets={eternelDatasets}
+              datasets={eternelState.datasets}
               hiddenLabels={hiddenLabels}
               onToggle={handleToggleLabel}
             />
@@ -757,8 +895,8 @@ export default function Home() {
             {showEternel && (
               <Line
                 data={{
-                  labels,
-                  datasets: eternelDatasets.filter(
+                  labels: eternelState.labels,
+                  datasets: eternelState.datasets.filter(
                     (ds) => !hiddenLabels.has(ds.label)
                   ),
                 }}
@@ -766,7 +904,6 @@ export default function Home() {
               />
             )}
 
-            {/* (에테르넬) 데이터 날짜 범위 설정 캘린더 팝업 */}
             <div className="mt-8 w-full flex justify-end gap-3">
               <div>
                 <label className="mr-4">시작 날짜:</label>
@@ -799,7 +936,24 @@ export default function Home() {
                   className={styles["set-icon"]}
                 />
                 <h2>시드링 세트</h2>
+                <button
+                  type="button"
+                  style={{
+                    marginLeft: 8,
+                    fontSize: "0.75rem",
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    border: "1px solid rgba(148,163,184,0.7)",
+                    background: "transparent",
+                    color: "#e5e7eb",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => toggleAllForLabels(seedRingLabels)}
+                >
+                  {seedRingAllHidden ? "모두 선택" : "모두 해제"}
+                </button>
               </div>
+
               <button
                 className={styles["toggle-btn"]}
                 onClick={() => setShowSeed((prev) => !prev)}
@@ -809,7 +963,7 @@ export default function Home() {
             </div>
 
             <ItemLegend
-              datasets={seedRingDatasets}
+              datasets={seedRingState.datasets}
               hiddenLabels={hiddenLabels}
               onToggle={handleToggleLabel}
             />
@@ -817,8 +971,8 @@ export default function Home() {
             {showSeed && (
               <Line
                 data={{
-                  labels,
-                  datasets: seedRingDatasets.filter(
+                  labels: seedRingState.labels,
+                  datasets: seedRingState.datasets.filter(
                     (ds) => !hiddenLabels.has(ds.label)
                   ),
                 }}
@@ -826,7 +980,6 @@ export default function Home() {
               />
             )}
 
-            {/* (시드링) 데이터 날짜 범위 설정 캘린더 팝업 */}
             <div className="mt-8 w-full flex justify-end gap-3">
               <div>
                 <label className="mr-4">시작 날짜:</label>
@@ -851,7 +1004,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 마켓 그래프 모달 (선택된 마켓 기준) */}
+      {/* 마켓 그래프 모달 */}
       {mesoModalOpen && (
         <div
           className={styles["modal-backdrop"]}
@@ -878,9 +1031,7 @@ export default function Home() {
             </div>
             <div className={styles["modal-body"]}>
               {marketHistory.length === 0 ? (
-                <div className={styles["modal-empty"]}>
-                  데이터가 없습니다.
-                </div>
+                <div className={styles["modal-empty"]}>데이터가 없습니다.</div>
               ) : (
                 <Line
                   data={{
@@ -910,10 +1061,7 @@ export default function Home() {
           className={styles["modal-backdrop"]}
           onClick={() => setNewsModalOpen(false)}
         >
-          <div
-            className={styles.modal}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles["modal-header"]}>
               <span>메이플 경제 뉴스 히스토리</span>
               <button
@@ -953,10 +1101,7 @@ export default function Home() {
                       new Date(a.createdAt).getTime()
                   )
                   .map((n) => (
-                    <div
-                      key={n.id}
-                      className={styles["news-history-item"]}
-                    >
+                    <div key={n.id} className={styles["news-history-item"]}>
                       <div className={styles["news-history-header"]}>
                         <span
                           className={`${styles["news-tag"]} ${
@@ -977,7 +1122,7 @@ export default function Home() {
                         {n.title}
                       </div>
                       <div className={styles["news-history-summary"]}>
-                        {n.summary}
+                        {n.content} {/* 🔹 여기서도 summary → content */}
                       </div>
                     </div>
                   ))}

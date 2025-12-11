@@ -47,7 +47,7 @@ type NoticeRow = {
   id: number;
   type: "NEWS" | "UPDATE" | "NOTICE";
   title: string;
-  summary: string;
+  content: string;          // 🔹 summary → content
   createdAt: string;
 };
 
@@ -58,7 +58,7 @@ type NewsItem = {
   id: number;
   type: NewsType;
   title: string;
-  summary: string;
+  content: string;          // 🔹 summary → content
   createdAt: string;
 };
 
@@ -111,7 +111,7 @@ function ItemLegend({
                 height: 22,
                 borderRadius: 4,
                 overflow: "hidden",
-                border: "1px solid #ddd", // ✅ 여기 고친 부분
+                border: "1px solid #ddd",
                 background: "#f5f5f5",
                 display: "flex",
                 alignItems: "center",
@@ -398,7 +398,7 @@ export default function Home() {
           id: n.id,
           type: convertType(n.type),
           title: n.title,
-          summary: n.summary,
+          content: n.content,      // 🔹 summary → content
           createdAt: n.createdAt,
         }));
 
@@ -1031,9 +1031,7 @@ export default function Home() {
             </div>
             <div className={styles["modal-body"]}>
               {marketHistory.length === 0 ? (
-                <div className={styles["modal-empty"]}>
-                  데이터가 없습니다.
-                </div>
+                <div className={styles["modal-empty"]}>데이터가 없습니다.</div>
               ) : (
                 <Line
                   data={{
@@ -1063,10 +1061,7 @@ export default function Home() {
           className={styles["modal-backdrop"]}
           onClick={() => setNewsModalOpen(false)}
         >
-          <div
-            className={styles.modal}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles["modal-header"]}>
               <span>메이플 경제 뉴스 히스토리</span>
               <button
@@ -1127,7 +1122,7 @@ export default function Home() {
                         {n.title}
                       </div>
                       <div className={styles["news-history-summary"]}>
-                        {n.summary}
+                        {n.content} {/* 🔹 여기서도 summary → content */}
                       </div>
                     </div>
                   ))}

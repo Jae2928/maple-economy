@@ -1,7 +1,7 @@
 export const siteConfig = {
   name: "MAPLE ECONOMY",
   description:
-    "메이플스토리 아이템 시세, 드랍/메소 효율 계산기를 제공하는 비공식 데이터 분석 사이트",
+    "메이플의 각종 경제지표를 한 눈에.",
   url: "https://mapleeconomy.com",
   ogImage: "/og-image.png",
   locale: "ko_KR",

@@ -845,7 +845,7 @@ export default function DropMesoPage() {
                   <div className={styles.cardTitle}>최저 비용 세팅 계산</div>
                   <div className={styles.cardDesc}>
                     DB에 저장된 시세를 바탕으로, 가장 적은 비용으로 목표를
-                    만족하는 조합을 찾습니다.
+                    만족하는 조합을 찾습니다. 최대 2분까지 소요될 수 있습니다.
                   </div>
                 </div>
               </div>

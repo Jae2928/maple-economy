@@ -1136,10 +1136,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      <footer className={styles.footer}>
-        Maple Economy · 개인 프로젝트 · Nexon Open API 활용 (비공식 팬 사이트)
-      </footer>
     </main>
   );
 }

@@ -571,7 +571,7 @@ export default function Home() {
         <div className={styles["hero-bg"]} />
         <div className={`${styles["hero-content"]} md:w-full`}>
           <div
-            className={`${styles["hero-title"]} text-2xl md:text-4xl`}
+            className={`${styles["hero-title"]} text-2xl md:text-4xl md:-mt-4`}
           >
             📈 MAPLE ECONOMY
           </div>
@@ -579,7 +579,7 @@ export default function Home() {
             메이플의 각종 경제지표를 한 눈에.
           </div>
 
-          <div className={styles["search-box"]}>
+          <div className={`${styles["search-box"]} mx-auto md:mt-12`}>
             <input
               className={styles["search-input"]}
               placeholder="캐릭터 닉네임으로 입력 시 드/메 템 맞추기로 이동합니다 (추후 변경 예정)."

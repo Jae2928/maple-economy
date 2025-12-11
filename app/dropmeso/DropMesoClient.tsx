@@ -1,4 +1,3 @@
-// app/dropmeso/DropMesoClient.tsx
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
@@ -429,7 +428,7 @@ export default function DropMesoClient() {
         <section className="grid gap-4 items-start md:grid-cols-7">
           {/* 왼쪽: 캐릭터 / 장비 */}
           {/* 1단계: 캐릭터 장비 불러오기 카드 */}
-          <div className={`${styles.card} md:h-full md:col-span-4 md:order-1`}>
+          <div className={`${styles.card} md:h-full md:col-span-4 md:order-1 md:flex md:flex-col md:justify-between`}>
             <div className={styles.cardHeader}>
               <span className={styles.cardStep}>1</span>
               <div>

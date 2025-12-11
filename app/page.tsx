@@ -12,6 +12,7 @@ import {
 } from "chart.js";
 import axios from "axios";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 
 ChartJS.register(
@@ -176,6 +177,8 @@ type GroupState = {
 const emptyGroupState: GroupState = { labels: [], datasets: [] };
 
 export default function Home() {
+  const router = useRouter();
+  
   // ====== 뉴스 관련 상태 ======
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const [newsModalOpen, setNewsModalOpen] = useState(false);
@@ -573,7 +576,9 @@ export default function Home() {
             <button
               className={styles["search-button"]}
               onClick={() => {
-                console.log("검색:", searchName);
+                if (searchName.trim()) {
+                  router.push(`/dropmeso?search=${encodeURIComponent(searchName)}`);
+                }
               }}
             >
               검색

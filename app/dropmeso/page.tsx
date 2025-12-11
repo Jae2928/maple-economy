@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from 'next/navigation';
 import axios from "axios";
 import styles from "./page.module.css";
 
@@ -122,7 +123,10 @@ const normalizePreset = (apiSlots?: ApiSlotEquipment[]): SlotEquipment[] => {
 };
 
 export default function DropMesoPage() {
-  const [characterName, setCharacterName] = useState("");
+  const searchParams = useSearchParams();
+  const searchValue = searchParams.get('search') || '';
+
+  const [characterName, setCharacterName] = useState(searchValue);
 
   // 🔥 캐릭터 장비에서 자동으로 감지된 직업군
   const [characterJobGroup, setCharacterJobGroup] =

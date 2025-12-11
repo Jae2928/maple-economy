@@ -6,6 +6,10 @@ export const siteConfig = {
   ogImage: "/og-image.png",
   locale: "ko_KR",
   keywords: [
+    "메이플 이코노미",
+    "메코노미",
+    "MAPLE ECONOMY",
+    "메이플 경제",
     "메이플스토리 시세",
     "메이플 시세",
     "메이플 경제",

@@ -48,7 +48,7 @@ type NoticeRow = {
   id: number;
   type: "NEWS" | "UPDATE" | "NOTICE";
   title: string;
-  content: string;          // 🔹 summary → content
+  content: string; // 🔹 summary → content
   createdAt: string;
 };
 
@@ -59,7 +59,7 @@ type NewsItem = {
   id: number;
   type: NewsType;
   title: string;
-  content: string;          // 🔹 summary → content
+  content: string; // 🔹 summary → content
   createdAt: string;
 };
 
@@ -178,7 +178,7 @@ const emptyGroupState: GroupState = { labels: [], datasets: [] };
 
 export default function Home() {
   const router = useRouter();
-  
+
   // ====== 뉴스 관련 상태 ======
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const [newsModalOpen, setNewsModalOpen] = useState(false);
@@ -401,7 +401,7 @@ export default function Home() {
           id: n.id,
           type: convertType(n.type),
           title: n.title,
-          content: n.content,      // 🔹 summary → content
+          content: n.content, // 🔹 summary → content
           createdAt: n.createdAt,
         }));
 
@@ -453,6 +453,13 @@ export default function Home() {
       }
       return next;
     });
+  };
+
+  // 🔍 드/메 페이지로 이동하는 공통 검색 함수
+  const handleCharacterSearch = () => {
+    const trimmed = searchName.trim();
+    if (!trimmed) return;
+    router.push(`/dropmeso?search=${encodeURIComponent(trimmed)}`);
   };
 
   // ====== 메인 그래프 옵션 ======
@@ -558,28 +565,36 @@ export default function Home() {
   return (
     <main className={styles.page}>
       {/* Hero Section */}
-      <section className={`${styles.hero} md:h-80 md:flex md:justify-center md:items-center`}>
+      <section
+        className={`${styles.hero} md:h-80 md:flex md:justify-center md:items-center`}
+      >
         <div className={styles["hero-bg"]} />
         <div className={`${styles["hero-content"]} md:w-full`}>
-          <div className={`${styles["hero-title"]} text-2xl md:text-4xl`}>📈 MAPLE ECONOMY</div>
+          <div
+            className={`${styles["hero-title"]} text-2xl md:text-4xl md:-mt-4`}
+          >
+            📈 MAPLE ECONOMY
+          </div>
           <div className={styles["hero-sub"]}>
             메이플의 각종 경제지표를 한 눈에.
           </div>
 
-          <div className={styles["search-box"]}>
+          <div className={`${styles["search-box"]} mx-auto md:mt-12`}>
             <input
               className={styles["search-input"]}
               placeholder="캐릭터 닉네임으로 입력 시 드/메 템 맞추기로 이동합니다 (추후 변경 예정)."
               value={searchName}
               onChange={(e) => setSearchName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleCharacterSearch();
+                }
+              }}
             />
             <button
               className={styles["search-button"]}
-              onClick={() => {
-                if (searchName.trim()) {
-                  router.push(`/dropmeso?search=${encodeURIComponent(searchName)}`);
-                }
-              }}
+              onClick={handleCharacterSearch}
             >
               검색
             </button>
@@ -1027,7 +1042,7 @@ export default function Home() {
                   ? "메소 마켓 시세 (일별)"
                   : "솔 에르다 조각 시세 (일별)"}
               </span>
-              <button
+            <button
                 className={styles["modal-close"]}
                 onClick={() => setMesoModalOpen(false)}
               >

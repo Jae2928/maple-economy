@@ -5,7 +5,7 @@ export default function NavBar() {
     const currentYear = new Date().getFullYear();
 
     return (
-        <footer className="mt-auto py-8 px-6 leading-8 text-gray-500 text-center border-t border-gray-800 bg-gray-950 md:text-lg">
+        <footer className="mt-auto py-8 px-6 leading-8 text-gray-500 text-center border-t border-gray-800 bg-gray-950">
           <div className="flex justify-center space-x-4">
             <a
               href="mailto:jaewon2928@gmail.com"

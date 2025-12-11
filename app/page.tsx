@@ -558,9 +558,9 @@ export default function Home() {
   return (
     <main className={styles.page}>
       {/* Hero Section */}
-      <section className={styles.hero}>
+      <section className={`${styles.hero} md:h-80 md:flex md:justify-center md:items-center`}>
         <div className={styles["hero-bg"]} />
-        <div className={styles["hero-content"]}>
+        <div className={`${styles["hero-content"]} md:w-full`}>
           <div className={styles["hero-title"]}>📈 MAPLE ECONOMY</div>
           <div className={styles["hero-sub"]}>
             메이플의 각종 경제지표를 한 눈에.

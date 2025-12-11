@@ -409,10 +409,10 @@ export default function DropMesoPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-7">
+        <section className="grid gap-4 items-start md:grid-cols-7">
           {/* 왼쪽: 캐릭터 / 장비 */}
           {/* 1단계: 캐릭터 장비 불러오기 카드 */}
-          <div className={`${styles.card} md:col-span-4 md:order-1`}>
+          <div className={`${styles.card} md:h-full md:col-span-4 md:order-1`}>
               <div className={styles.cardHeader}>
                 <span className={styles.cardStep}>1</span>
                 <div>
@@ -838,7 +838,7 @@ export default function DropMesoPage() {
           </div>
 
           {/* 결과 카드 */}
-          <div className={`${styles.card} md:col-span-3 md:order-last`}>
+          <div className={`${styles.card} md:h-fit md:col-span-3 md:order-last`}>
               <div className={styles.cardHeader}>
                 <span className={styles.cardStep}>3</span>
                 <div>

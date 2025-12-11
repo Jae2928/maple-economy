@@ -12,6 +12,7 @@ import {
 } from "chart.js";
 import axios from "axios";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 
 ChartJS.register(
@@ -176,6 +177,8 @@ type GroupState = {
 const emptyGroupState: GroupState = { labels: [], datasets: [] };
 
 export default function Home() {
+  const router = useRouter();
+  
   // ====== 뉴스 관련 상태 ======
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const [newsModalOpen, setNewsModalOpen] = useState(false);
@@ -555,10 +558,10 @@ export default function Home() {
   return (
     <main className={styles.page}>
       {/* Hero Section */}
-      <section className={styles.hero}>
+      <section className={`${styles.hero} md:h-80 md:flex md:justify-center md:items-center`}>
         <div className={styles["hero-bg"]} />
-        <div className={styles["hero-content"]}>
-          <div className={styles["hero-title"]}>📈 MAPLE ECONOMY</div>
+        <div className={`${styles["hero-content"]} md:w-full`}>
+          <div className={`${styles["hero-title"]} text-2xl md:text-4xl`}>📈 MAPLE ECONOMY</div>
           <div className={styles["hero-sub"]}>
             메이플의 각종 경제지표를 한 눈에.
           </div>
@@ -573,7 +576,9 @@ export default function Home() {
             <button
               className={styles["search-button"]}
               onClick={() => {
-                console.log("검색:", searchName);
+                if (searchName.trim()) {
+                  router.push(`/dropmeso?search=${encodeURIComponent(searchName)}`);
+                }
               }}
             >
               검색
@@ -1131,10 +1136,6 @@ export default function Home() {
           </div>
         </div>
       )}
-
-      <footer className={styles.footer}>
-        Maple Economy · 개인 프로젝트 · Nexon Open API 활용 (비공식 팬 사이트)
-      </footer>
     </main>
   );
 }

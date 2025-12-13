@@ -40,6 +40,7 @@ type RequestBody = {
   targetMeso: number;
   excludeKarma: boolean;
   jobGroup: JobGroup; // 프론트에서 전달
+  lockedItemNames?: string[]; // ✅ 추가: 고정 사용 체크된 아이템 이름들
 };
 
 type DbItemRow = {
@@ -124,12 +125,53 @@ const LIMIT_PER_SLOT_GROUP: Record<SlotGroup, number> = {
   EARRING: 3,
 };
 
+// ✅ (추가) lockedItemNames -> 제외할 equip_unique_group 목록 만들기
+async function buildExcludedUniqueGroups(lockedItemNames?: string[]) {
+  const names = (lockedItemNames ?? [])
+    .map((s) => String(s).trim())
+    .filter(Boolean);
+
+  const extraGroups: string[] = [];
+
+  // ✅ 예외: "여명의 가디언 엔젤 링" 고정 시, unique_group "가디언 엔젤 링"도 제외
+  if (names.includes("여명의 가디언 엔젤 링")) {
+    extraGroups.push("가디언 엔젤 링");
+  }
+
+  if (names.length === 0 && extraGroups.length === 0) {
+    return [];
+  }
+
+  // name으로 unique_group 조회 (날짜/슬롯그룹 상관없이 DISTINCT로 뽑음)
+  // - 같은 name이 여러 date에 있어도 동일 unique_group이면 문제 없음
+  let dbGroups: string[] = [];
+  if (names.length > 0) {
+    const q = await pool.query(
+      `
+        SELECT DISTINCT equip_unique_group
+        FROM drop_meso
+        WHERE name = ANY($1::text[])
+      `,
+      [names]
+    );
+
+    dbGroups = (q.rows ?? [])
+      .map((r: any) => r?.equip_unique_group)
+      .filter((v: any) => typeof v === "string" && v.trim().length > 0);
+  }
+
+  // 합쳐서 중복 제거
+  const set = new Set<string>([...dbGroups, ...extraGroups]);
+  return Array.from(set);
+}
+
 // ---- 공통: 최신 날짜 + 후보 불러오기 (drop_meso) ----
 
 async function loadCandidatesForSlot(
   slot: EquipmentSlotKey,
   jobGroup: JobGroup | null,
-  excludeKarma: boolean
+  excludeKarma: boolean,
+  excludedUniqueGroups: string[] // ✅ 추가
 ): Promise<DbItemRow[]> {
   const slotGroup = SLOT_TO_GROUP[slot];
 
@@ -162,8 +204,9 @@ async function loadCandidatesForSlot(
       FROM drop_meso d
       WHERE d.slot_group = $1
         AND d.date       = $2
+        AND NOT (d.equip_unique_group = ANY($3::text[]))  -- ✅ 고정 아이템과 같은 unique_group 제외
   `;
-  const params: any[] = [slotGroup, max_date];
+  const params: any[] = [slotGroup, max_date, excludedUniqueGroups ?? []];
 
   if (jobGroup && jobGroup !== "ALL") {
     sql += ` AND (d.job_group = 'ALL' OR d.job_group = $${params.length + 1})`;
@@ -214,14 +257,10 @@ function filterDominated(list: Candidate[]): Candidate[] {
       if (a.uniqueGroup !== b.uniqueGroup) continue;
 
       const betterOrEqual =
-        b.deltaDrop >= a.deltaDrop &&
-        b.deltaMeso >= a.deltaMeso &&
-        b.price <= a.price;
+        b.deltaDrop >= a.deltaDrop && b.deltaMeso >= a.deltaMeso && b.price <= a.price;
 
       const strictlyBetter =
-        b.deltaDrop > a.deltaDrop ||
-        b.deltaMeso > a.deltaMeso ||
-        b.price < a.price;
+        b.deltaDrop > a.deltaDrop || b.deltaMeso > a.deltaMeso || b.price < a.price;
 
       if (betterOrEqual && strictlyBetter) {
         dominated = true;
@@ -234,61 +273,30 @@ function filterDominated(list: Candidate[]): Candidate[] {
 }
 
 // ---- 프리컴퓨트용 슬롯 패턴 판별 ----
-//
-// 얼굴장식은 항상 무시하고, 나머지 슬롯의 useForHunting 패턴으로만 판별.
-//
-// 1) ALL_SLOTS:
-//    - 얼굴장식을 제외한 모든 슬롯 useForHunting === false (전부 교체 가능)
-//
-// 2) NO_PENDANT1:
-//    - 얼굴장식 제외
-//    - 펜던트만 useForHunting === true (고정)
-//    - 나머지 슬롯은 모두 false
-//
-// 3) NO_PENDANT2:
-//    - 얼굴장식 제외
-//    - 펜던트2만 useForHunting === true (고정)
-//    - 나머지 슬롯은 모두 false
-//
-// 4) 그 외는 NONE (프리컴퓨트 사용 안 함)
 function deriveSlotsKeyForPrecompute(equipment: ClientSlotEquipment[]): SlotsKey {
   const withoutFace = equipment.filter((e) => e.slot !== "얼굴장식");
 
   const allUnlockedExcept = (slotToLock?: EquipmentSlotKey): boolean => {
     return withoutFace.every((e) => {
       if (slotToLock && e.slot === slotToLock) {
-        // 이 슬롯은 "고정"이어야 함
         return e.useForHunting === true;
       }
-      // 나머지 슬롯은 모두 교체 가능
       return e.useForHunting === false;
     });
   };
 
-  // 1) 모든 슬롯 교체 가능
   if (allUnlockedExcept(undefined)) return "ALL_SLOTS";
-
-  // 2) 펜던트1만 고정
   if (allUnlockedExcept("펜던트")) return "NO_PENDANT1";
-
-  // 3) 펜던트2만 고정
   if (allUnlockedExcept("펜던트2")) return "NO_PENDANT2";
-
-  // 4) 그 외는 프리컴퓨트 사용 안 함
   return "NONE";
 }
 
 // ---- 프리컴퓨트 아이템을 실제 슬롯에 배치 ----
-//
-// precomputedRows: drop_meso에서 읽어온 row들(얼굴장식 제외라고 가정)
-// equipment: 현재 요청에서 넘어온 슬롯 구조
-// slotsKey: dm_precomputed_case.slots 에 저장된 패턴 키
 function assignPrecomputedToSlots(
   equipment: ClientSlotEquipment[],
   precomputedRows: DbItemRow[],
   slotsKey: SlotsKey
 ): { slot: EquipmentSlotKey; row: DbItemRow }[] | null {
-  // 슬롯그룹별로 사용 가능한 슬롯 목록 만들기
   const availableByGroup: Record<SlotGroup, EquipmentSlotKey[]> = {
     RING: [],
     PENDANT: [],
@@ -298,10 +306,7 @@ function assignPrecomputedToSlots(
   };
 
   for (const eq of equipment) {
-    // 1) 얼굴장식은 프리컴퓨트 대상에서 항상 제외
     if (eq.slot === "얼굴장식") continue;
-
-    // 2) 패턴에 따라 펜던트 슬롯 제외
     if (slotsKey === "NO_PENDANT1" && eq.slot === "펜던트") continue;
     if (slotsKey === "NO_PENDANT2" && eq.slot === "펜던트2") continue;
 
@@ -309,28 +314,18 @@ function assignPrecomputedToSlots(
     availableByGroup[g].push(eq.slot);
   }
 
-  // SLOT_ORDER 기준으로 정렬 → 결과 슬롯 순서가 일정해짐
   for (const g of Object.keys(availableByGroup) as SlotGroup[]) {
-    availableByGroup[g].sort(
-      (a, b) => SLOT_ORDER.indexOf(a) - SLOT_ORDER.indexOf(b)
-    );
+    availableByGroup[g].sort((a, b) => SLOT_ORDER.indexOf(a) - SLOT_ORDER.indexOf(b));
   }
 
   const assigned: { slot: EquipmentSlotKey; row: DbItemRow }[] = [];
 
   for (const row of precomputedRows) {
     const g = row.slot_group;
-
-    // 프리컴퓨트 테이블에는 FACE가 없어야 정상. 만약 들어있으면 실패 처리.
-    if (g === "FACE") {
-      return null;
-    }
+    if (g === "FACE") return null;
 
     const list = availableByGroup[g];
-    if (!list || list.length === 0) {
-      // 이 그룹에 더 이상 붙일 슬롯이 없으면 매핑 불가
-      return null;
-    }
+    if (!list || list.length === 0) return null;
 
     const slot = list.shift() as EquipmentSlotKey;
     assigned.push({ slot, row });
@@ -347,14 +342,16 @@ async function tryUsePrecomputedCase(params: {
   targetMeso: number;
   excludeKarma: boolean;
   jobGroup: JobGroup;
+  excludedUniqueGroups: string[]; // ✅ 추가
 }): Promise<OptimizationResult | null> {
-  const { equipment, targetDrop, targetMeso, excludeKarma, jobGroup } = params;
+  const { equipment, targetDrop, targetMeso, excludeKarma, jobGroup, excludedUniqueGroups } = params;
 
-  // 1) 슬롯 패턴 판별
+  const face = equipment.find((e) => e.slot === "얼굴장식");
+  if (face?.useForHunting === true) return null;
+
   const slotsKey = deriveSlotsKeyForPrecompute(equipment);
   if (slotsKey === "NONE") return null;
 
-  // 2) dm_precomputed_case에서 매칭되는 케이스 찾기
   const caseResult = await pool.query(
     `
       SELECT number_list
@@ -374,7 +371,6 @@ async function tryUsePrecomputedCase(params: {
   const idList = caseRow.number_list || [];
   if (!idList.length) return null;
 
-  // 3) drop_meso에서 precomputed 조합에 해당하는 아이템들 조회 (얼굴 제외라고 가정)
   const itemsResult = await pool.query(
     `
       SELECT *
@@ -383,19 +379,21 @@ async function tryUsePrecomputedCase(params: {
     `,
     [idList]
   );
+
   const precomputedRows = itemsResult.rows as DbItemRow[];
   if (!precomputedRows.length) return null;
 
-  // 4) precomputed 아이템들을 실제 슬롯에 매핑
-  const assigned = assignPrecomputedToSlots(equipment, precomputedRows, slotsKey);
-  if (!assigned) {
-    // 매핑 불가능하면 프리컴퓨트 사용 포기
+  // ✅ 프리컴퓨트 결과가 고정 아이템 unique_group을 침범하면 프리컴퓨트 사용 포기
+  if (
+    excludedUniqueGroups.length > 0 &&
+    precomputedRows.some((r) => excludedUniqueGroups.includes(r.equip_unique_group))
+  ) {
     return null;
   }
 
-  // 5) 기본 스탯: 프리컴퓨트 worst-case 에서는
-  // 얼굴장식을 제외한 모든 슬롯의 drop/meso = 0 으로 가정.
-  // (펜던트1/2가 제외 패턴일 수는 있지만, 그 슬롯도 드랍/메획 0이라고 보는 케이스)
+  const assigned = assignPrecomputedToSlots(equipment, precomputedRows, slotsKey);
+  if (!assigned) return null;
+
   let finalDrop = 0;
   let finalMeso = 0;
   let totalPrice = 0;
@@ -419,18 +417,12 @@ async function tryUsePrecomputedCase(params: {
     });
   }
 
-  // 6) 여기까지의 조합이 이미 목표를 만족하면 얼굴 없이 반환
   if (finalDrop >= targetDrop && finalMeso >= targetMeso) {
-    return {
-      itemsToBuy,
-      totalPrice,
-      finalDrop,
-      finalMeso,
-    };
+    return { itemsToBuy, totalPrice, finalDrop, finalMeso };
   }
 
-  // 7) 얼굴장식 후보를 DB에서 가져와서, 가장 저렴하게 목표를 만족하는 얼굴 아이템 찾기
-  const faceRows = await loadCandidatesForSlot("얼굴장식", jobGroup, excludeKarma);
+  // 얼굴 후보도 excludedUniqueGroups 적용
+  const faceRows = await loadCandidatesForSlot("얼굴장식", jobGroup, excludeKarma, excludedUniqueGroups);
 
   type FaceChoice = {
     row: DbItemRow | null;
@@ -440,12 +432,6 @@ async function tryUsePrecomputedCase(params: {
   };
 
   let bestFace: FaceChoice | null = null;
-
-  // 7-1. 이론상 여기서 finalDrop/meso는 이미 target 미만이라
-  // 얼굴 없이 만족하는 케이스는 없지만, 안전하게 한 번 더 체크
-  if (finalDrop >= targetDrop && finalMeso >= targetMeso) {
-    bestFace = { row: null, extraDrop: 0, extraMeso: 0, extraPrice: 0 };
-  }
 
   for (const row of faceRows) {
     const d = row.drop_pct ?? 0;
@@ -457,22 +443,13 @@ async function tryUsePrecomputedCase(params: {
 
     if (newDrop >= targetDrop && newMeso >= targetMeso) {
       if (!bestFace || p < bestFace.extraPrice) {
-        bestFace = {
-          row,
-          extraDrop: d,
-          extraMeso: m,
-          extraPrice: p,
-        };
+        bestFace = { row, extraDrop: d, extraMeso: m, extraPrice: p };
       }
     }
   }
 
-  // 8) 얼굴로도 목표를 만족 못하면 프리컴퓨트 사용 포기 → DFS로 풀도록 null 반환
-  if (!bestFace) {
-    return null;
-  }
+  if (!bestFace) return null;
 
-  // 9) 얼굴 아이템을 조합에 추가
   if (bestFace.row) {
     finalDrop += bestFace.extraDrop;
     finalMeso += bestFace.extraMeso;
@@ -487,12 +464,7 @@ async function tryUsePrecomputedCase(params: {
     });
   }
 
-  return {
-    itemsToBuy,
-    totalPrice,
-    finalDrop,
-    finalMeso,
-  };
+  return { itemsToBuy, totalPrice, finalDrop, finalMeso };
 }
 
 // ---- 메인 API ----
@@ -500,7 +472,7 @@ async function tryUsePrecomputedCase(params: {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as RequestBody;
-    const { equipment, targetDrop, targetMeso, excludeKarma, jobGroup } = body;
+    const { equipment, targetDrop, targetMeso, excludeKarma, jobGroup, lockedItemNames } = body;
 
     if (!jobGroup) {
       return NextResponse.json(
@@ -513,11 +485,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (!equipment?.length) {
-      return NextResponse.json(
-        { message: "장비 정보가 비어 있습니다." },
-        { status: 400 }
-      );
+      return NextResponse.json({ message: "장비 정보가 비어 있습니다." }, { status: 400 });
     }
+
+    // ✅ 고정 아이템 기반 제외 unique_group 목록 계산
+    const excludedUniqueGroups = await buildExcludedUniqueGroups(lockedItemNames);
 
     const lockedSlots = equipment.filter((e) => e.useForHunting);
     const mutableSlots = equipment
@@ -545,40 +517,35 @@ export async function POST(req: NextRequest) {
     if (!mutableSlots.length) {
       return NextResponse.json(
         {
-          message:
-            "변경 가능한 슬롯이 없습니다. 체크를 풀어서 변경 가능한 슬롯을 늘려주세요.",
+          message: "변경 가능한 슬롯이 없습니다. 체크를 풀어서 변경 가능한 슬롯을 늘려주세요.",
         },
         { status: 400 }
       );
     }
 
-    // 🔥 1단계: 프리컴퓨트 케이스 사용 시도
-    //  - ALL_SLOTS / NO_PENDANT1 / NO_PENDANT2 패턴 중 하나에 해당하고,
-    //  - dm_precomputed_case 에 미리 계산된 조합이 있으면 그걸 사용
+    // 🔥 1단계: 프리컴퓨트 케이스 시도 (excludedUniqueGroups 반영)
     const precomputed = await tryUsePrecomputedCase({
       equipment,
       targetDrop,
       targetMeso,
       excludeKarma,
       jobGroup,
+      excludedUniqueGroups,
     });
 
     if (precomputed) {
-      return NextResponse.json<OptimizationResult>(precomputed, {
-        status: 200,
-      });
+      return NextResponse.json<OptimizationResult>(precomputed, { status: 200 });
     }
 
-    // 🔥 2단계: 프리컴퓨트 사용 불가 or 실패 → 기존 DFS 로직 수행
+    // 🔥 2단계: 기존 DFS
 
-    // ---- 슬롯별 후보 생성 ----
     const slotCandidates: Candidate[][] = [];
 
     for (const slotInfo of mutableSlots) {
       const slot = slotInfo.slot;
       const slotGroup = SLOT_TO_GROUP[slot];
 
-      const dbRows = await loadCandidatesForSlot(slot, jobGroup, excludeKarma);
+      const dbRows = await loadCandidatesForSlot(slot, jobGroup, excludeKarma, excludedUniqueGroups);
 
       const candidates: Candidate[] = [
         {
@@ -607,13 +574,10 @@ export async function POST(req: NextRequest) {
 
       let refined = dedupeSameSpecByCheapest(candidates);
       refined = filterDominated(refined);
-      // 🔥 (drop, meso) 조합당 개수 제한은 DB에서 이미 처리했으므로 여기선 호출 필요 없음
       refined.sort((a, b) => a.price - b.price);
 
       slotCandidates.push(refined);
     }
-
-    // ---- DFS (equip_unique_group 전역 1회 제한 + 가지치기) ----
 
     const nSlots = slotCandidates.length;
     let bestPrice = Number.POSITIVE_INFINITY;
@@ -624,12 +588,8 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < nSlots; i++) {
       for (const cand of slotCandidates[i]) {
-        if (cand.deltaDrop > maxDropPerSlot[i]) {
-          maxDropPerSlot[i] = cand.deltaDrop;
-        }
-        if (cand.deltaMeso > maxMesoPerSlot[i]) {
-          maxMesoPerSlot[i] = cand.deltaMeso;
-        }
+        if (cand.deltaDrop > maxDropPerSlot[i]) maxDropPerSlot[i] = cand.deltaDrop;
+        if (cand.deltaMeso > maxMesoPerSlot[i]) maxMesoPerSlot[i] = cand.deltaMeso;
       }
     }
 
@@ -655,15 +615,12 @@ export async function POST(req: NextRequest) {
       const possibleMaxDrop = baseDrop + extraDrop + suffixMaxDrop[slotIdx];
       const possibleMaxMeso = baseMeso + extraMeso + suffixMaxMeso[slotIdx];
 
-      if (possibleMaxDrop < targetDrop || possibleMaxMeso < targetMeso) {
-        return;
-      }
+      if (possibleMaxDrop < targetDrop || possibleMaxMeso < targetMeso) return;
 
       const cands = slotCandidates[slotIdx];
 
       for (let i = 0; i < cands.length; i++) {
         const cand = cands[i];
-
         const isNone = cand.uniqueGroup.startsWith("NONE_");
 
         if (!isNone && usedGroups.has(cand.uniqueGroup)) continue;
@@ -694,9 +651,7 @@ export async function POST(req: NextRequest) {
           dfs(slotIdx + 1, newDrop, newMeso, newCost, usedGroups, chosenIdx);
         }
 
-        if (added) {
-          usedGroups.delete(cand.uniqueGroup);
-        }
+        if (added) usedGroups.delete(cand.uniqueGroup);
       }
     }
 
@@ -706,16 +661,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           message:
-            "주어진 목표를 만족하는 조합을 찾지 못했습니다. " +
-            "목표 수치를 조금 낮추거나, 더 많은 슬롯을 변경 가능하도록 풀어주세요.",
+            "주어진 목표를 만족하는 조합을 찾지 못했습니다. 목표 수치를 조금 낮추거나, 더 많은 슬롯을 변경 가능하도록 풀어주세요.",
         },
         { status: 400 }
       );
     }
 
     const bestChoice = best as number[];
-
-    // ---- 결과 재구성 ----
 
     let finalDrop = baseDrop;
     let finalMeso = baseMeso;
@@ -742,20 +694,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 슬롯 정렬: 얼굴장식을 항상 맨 위에 표시
-    itemsToBuy.sort((a, b) => {
-      const idxA = SLOT_ORDER.indexOf(a.slot);
-      const idxB = SLOT_ORDER.indexOf(b.slot);
-      return idxA - idxB;
-    });
+    itemsToBuy.sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
 
     return NextResponse.json<OptimizationResult>(
-      {
-        itemsToBuy,
-        totalPrice,
-        finalDrop,
-        finalMeso,
-      },
+      { itemsToBuy, totalPrice, finalDrop, finalMeso },
       { status: 200 }
     );
   } catch (err: any) {

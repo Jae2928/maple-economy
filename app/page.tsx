@@ -11,7 +11,7 @@ import {
   Legend,
 } from "chart.js";
 import axios from "axios";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 
@@ -28,7 +28,7 @@ ChartJS.register(
 type PriceRow = {
   name: string;
   price: number;
-  date: string;
+  date: string; // YYYY-MM-DD
 };
 
 type Dataset = {
@@ -48,7 +48,7 @@ type NoticeRow = {
   id: number;
   type: "NEWS" | "UPDATE" | "NOTICE";
   title: string;
-  content: string; // 🔹 summary → content
+  content: string;
   createdAt: string;
 };
 
@@ -59,7 +59,7 @@ type NewsItem = {
   id: number;
   type: NewsType;
   title: string;
-  content: string; // 🔹 summary → content
+  content: string;
   createdAt: string;
 };
 
@@ -104,6 +104,7 @@ function ItemLegend({
               fontSize: "0.8rem",
               cursor: "pointer",
               opacity: hidden ? 0.4 : 1,
+              userSelect: "none",
             }}
           >
             <div
@@ -176,6 +177,207 @@ type GroupState = {
 
 const emptyGroupState: GroupState = { labels: [], datasets: [] };
 
+// ---------- 표 렌더링용 ----------
+type TableRow = {
+  name: string;
+  price: number | null;
+  dayChangePct: number | null;
+  weekChangePct: number | null;
+};
+
+function pctChange(now: number, prev: number): number | null {
+  if (!Number.isFinite(now) || !Number.isFinite(prev)) return null;
+  if (prev === 0) return null;
+  return ((now - prev) / prev) * 100;
+}
+
+function getValueAtOrBefore(data: (number | null)[], idx: number): number | null {
+  for (let i = idx; i >= 0; i--) {
+    const v = data[i];
+    if (v != null) return v;
+  }
+  return null;
+}
+
+function ChangeBadge({ value }: { value: number | null }) {
+  if (value == null) return <span style={{ opacity: 0.6 }}>-</span>;
+
+  const up = value > 0;
+  const down = value < 0;
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontVariantNumeric: "tabular-nums",
+        color: up ? "#ef4444" : down ? "#3b82f6" : "#cbd5e1",
+      }}
+    >
+      <span style={{ fontSize: "0.9rem" }}>
+        {up ? "▲" : down ? "▼" : "―"}
+      </span>
+      <span>{Math.abs(value).toFixed(1)}%</span>
+    </span>
+  );
+}
+
+function PriceTable({
+  groupState,
+  formatToEok,
+}: {
+  groupState: GroupState;
+  formatToEok: (v: number) => string;
+}) {
+  const rows: TableRow[] = useMemo(() => {
+    const labels = groupState.labels;
+    const lastIdx = labels.length - 1;
+    const prevIdx = lastIdx - 1;
+    const weekIdx = lastIdx - 7;
+
+    return groupState.datasets
+      .map((ds) => {
+        const now = lastIdx >= 0 ? getValueAtOrBefore(ds.data, lastIdx) : null;
+        const prev = prevIdx >= 0 ? getValueAtOrBefore(ds.data, prevIdx) : null;
+        const week = weekIdx >= 0 ? getValueAtOrBefore(ds.data, weekIdx) : null;
+
+        const dayPct =
+          now != null && prev != null ? pctChange(now, prev) : null;
+        const weekPct =
+          now != null && week != null ? pctChange(now, week) : null;
+
+        return {
+          name: ds.label,
+          price: now,
+          dayChangePct: dayPct,
+          weekChangePct: weekPct,
+        };
+      })
+      .sort((a, b) => {
+        const av = a.price ?? -1;
+        const bv = b.price ?? -1;
+        return bv - av; // 비싼 순
+      });
+  }, [groupState]);
+
+  return (
+    <div style={{ marginTop: 8, overflowX: "auto" }}>
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "separate",
+          borderSpacing: 0,
+          border: "1px solid rgba(148,163,184,0.25)",
+          borderRadius: 12,
+          overflow: "hidden",
+          background: "rgba(15, 23, 42, 0.55)",
+        }}
+      >
+        <thead>
+          <tr
+            style={{
+              background: "rgba(31, 41, 55, 0.95)",
+              color: "#e5e7eb",
+            }}
+          >
+            <th style={thStyle}>이름</th>
+            <th style={thStyle}>가격</th>
+            <th style={thStyle}>전일 대비</th>
+            <th style={thStyle}>전주 대비</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name} style={{ color: "#e5e7eb" }}>
+              <td style={tdNameStyle}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      overflow: "hidden",
+                      border: "1px solid rgba(148,163,184,0.35)",
+                      background: "rgba(255,255,255,0.06)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    <img
+                      src={`/item_image/item_${imageFileName(r.name)}.png`}
+                      alt={r.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  </div>
+                  <span style={{ whiteSpace: "nowrap" }}>{r.name}</span>
+                </div>
+              </td>
+              <td style={tdStyle}>
+                {r.price == null ? (
+                  <span style={{ opacity: 0.6 }}>-</span>
+                ) : (
+                  <span
+                    title={`${r.price.toLocaleString("ko-KR")} 메소`}
+                    style={{ fontVariantNumeric: "tabular-nums" }}
+                  >
+                    {formatToEok(r.price)}
+                  </span>
+                )}
+              </td>
+              <td style={tdStyle}>
+                <ChangeBadge value={r.dayChangePct} />
+              </td>
+              <td style={tdStyle}>
+                <ChangeBadge value={r.weekChangePct} />
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td
+                colSpan={4}
+                style={{
+                  padding: "14px 12px",
+                  textAlign: "center",
+                  color: "#cbd5e1",
+                  opacity: 0.8,
+                }}
+              >
+                표시할 데이터가 없습니다.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "12px 12px",
+  fontSize: "0.85rem",
+  borderBottom: "1px solid rgba(148,163,184,0.25)",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "12px 12px",
+  fontSize: "0.9rem",
+  borderBottom: "1px solid rgba(148,163,184,0.18)",
+  verticalAlign: "middle",
+};
+
+const tdNameStyle: React.CSSProperties = {
+  ...tdStyle,
+  minWidth: 220,
+};
+
 export default function Home() {
   const router = useRouter();
 
@@ -184,32 +386,37 @@ export default function Home() {
   const [newsModalOpen, setNewsModalOpen] = useState(false);
   const [newsFilter, setNewsFilter] = useState<NewsType | "전체">("전체");
 
-  // ====== 아이템 시세 그래프 상태 (그룹별) ======
-  const [chilheukState, setChilheukState] =
-    useState<GroupState>(emptyGroupState);
-  const [eternelState, setEternelState] =
-    useState<GroupState>(emptyGroupState);
-  const [seedRingState, setSeedRingState] =
-    useState<GroupState>(emptyGroupState);
+  // ====== 아이템 시세 (그룹별) ======
+  const [chilheukState, setChilheukState] = useState<GroupState>(emptyGroupState);
+  const [eternelState, setEternelState] = useState<GroupState>(emptyGroupState);
+  const [seedRingState, setSeedRingState] = useState<GroupState>(emptyGroupState);
+
+  // ✅ 표 전용(항상 8일치) 상태
+  const [chilheukTableState, setChilheukTableState] = useState<GroupState>(emptyGroupState);
+  const [eternelTableState, setEternelTableState] = useState<GroupState>(emptyGroupState);
+  const [seedTableState, setSeedTableState] = useState<GroupState>(emptyGroupState);
 
   const [showChilheuk, setShowChilheuk] = useState(true);
   const [showEternel, setShowEternel] = useState(true);
   const [showSeed, setShowSeed] = useState(true);
 
-  const [searchName, setSearchName] = useState("");
+  // ✅ 표/그래프 토글 상태 (그룹별)
+  const [chilheukView, setChilheukView] = useState<"chart" | "table">("chart");
+  const [eternelView, setEternelView] = useState<"chart" | "table">("chart");
+  const [seedView, setSeedView] = useState<"chart" | "table">("chart");
 
+  const [searchName, setSearchName] = useState("");
   const [latestDate, setLatestDate] = useState<string | null>(null);
 
   // ====== 요약 카드 + 모달에서 사용할 마켓 정보 ======
-  const [selectedMarketItem, setSelectedMarketItem] =
-    useState<MarketItem>("메소 마켓");
+  const [selectedMarketItem, setSelectedMarketItem] = useState<MarketItem>("메소 마켓");
   const [marketToday, setMarketToday] = useState<number | null>(null);
   const [marketChange, setMarketChange] = useState<number | null>(null);
   const [marketLatestDate, setMarketLatestDate] = useState<string | null>(null);
   const [marketHistory, setMarketHistory] = useState<MesoPoint[]>([]);
   const [mesoModalOpen, setMesoModalOpen] = useState(false);
 
-  // ====== 날짜 범위 선택 상태 (칠흑, 에테르넬, 시드링) ======
+  // ====== 날짜 범위 선택 상태 (그래프용) ======
   const [chilheukDateStart, setchilheukDateStart] = useState<string>("");
   const [chilheukDateEnd, setchilheukDateEnd] = useState<string>("");
   const [eternelDateStart, setEternelDateStart] = useState<string>("");
@@ -217,7 +424,7 @@ export default function Home() {
   const [seedRingDateStart, setSeedRingDateStart] = useState<string>("");
   const [seedRingDateEnd, setSeedRingDateEnd] = useState<string>("");
 
-  // 🔥 기본으로 숨길 아이템
+  // 🔥 그래프 기본 숨김 아이템
   const [hiddenLabels, setHiddenLabels] = useState<Set<string>>(
     () => new Set(["창세의 뱃지", "컴플리트 언더컨트롤"])
   );
@@ -248,7 +455,17 @@ export default function Home() {
 
   const formatDate = (d: Date) => d.toISOString().slice(0, 10);
 
-  // ====== 1-1) 최초 로딩 시: 최근 7일 날짜 범위 세팅 ======
+  // ✅ 표는 항상 "오늘 포함 8일치" (오늘 ~ 7일 전)
+  const getTableRange = () => {
+    const today = new Date();
+    const end = formatDate(today);
+    const startDate = new Date();
+    startDate.setDate(today.getDate() - 7);
+    const start = formatDate(startDate);
+    return { start, end };
+  };
+
+  // ====== 1-1) 최초 로딩 시: 그래프는 최근 7일(오늘 포함 7일 = 6일 전부터) ======
   useEffect(() => {
     const today = new Date();
     const end = formatDate(today);
@@ -264,11 +481,12 @@ export default function Home() {
     setSeedRingDateEnd(end);
   }, []);
 
-  // ====== 1-2) 그룹별로 /api/price 호출 ======
+  // ====== 공통 fetch (setter로 넣어서 재사용) ======
   const fetchGroupPrice = async (
     group: GroupKey,
     startDate: string,
-    endDate: string
+    endDate: string,
+    setter: (s: GroupState) => void
   ) => {
     if (!startDate || !endDate) return;
     if (new Date(startDate) > new Date(endDate)) return;
@@ -288,9 +506,7 @@ export default function Home() {
       const filteredRows = rows.filter((r) => itemNames.includes(r.name));
 
       const dateKeys = [...new Set(filteredRows.map((r) => r.date))].sort();
-      const items: string[] = [
-        ...new Set(filteredRows.map((r) => r.name)),
-      ].sort();
+      const items: string[] = [...new Set(filteredRows.map((r) => r.name))].sort();
 
       const datasets: Dataset[] = items.map((itemName: string) => {
         const itemData = filteredRows.filter((r) => r.name === itemName);
@@ -313,9 +529,7 @@ export default function Home() {
         datasets,
       };
 
-      if (group === "칠흑") setChilheukState(groupState);
-      else if (group === "에테르넬") setEternelState(groupState);
-      else setSeedRingState(groupState);
+      setter(groupState);
 
       const maxDate = dateKeys[dateKeys.length - 1] ?? null;
       if (maxDate) {
@@ -329,23 +543,46 @@ export default function Home() {
     }
   };
 
+  // ====== 1-2) 그래프용 fetch ======
   useEffect(() => {
     if (!chilheukDateStart || !chilheukDateEnd) return;
-    fetchGroupPrice("칠흑", chilheukDateStart, chilheukDateEnd);
+    fetchGroupPrice("칠흑", chilheukDateStart, chilheukDateEnd, setChilheukState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chilheukDateStart, chilheukDateEnd]);
 
   useEffect(() => {
     if (!eternelDateStart || !eternelDateEnd) return;
-    fetchGroupPrice("에테르넬", eternelDateStart, eternelDateEnd);
+    fetchGroupPrice("에테르넬", eternelDateStart, eternelDateEnd, setEternelState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eternelDateStart, eternelDateEnd]);
 
   useEffect(() => {
     if (!seedRingDateStart || !seedRingDateEnd) return;
-    fetchGroupPrice("시드링", seedRingDateStart, seedRingDateEnd);
+    fetchGroupPrice("시드링", seedRingDateStart, seedRingDateEnd, setSeedRingState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedRingDateStart, seedRingDateEnd]);
+
+  // ✅ 표로 전환될 때는 자동으로 8일치 데이터 fetch (전주 대비 기본 표시)
+  useEffect(() => {
+    if (chilheukView !== "table") return;
+    const { start, end } = getTableRange();
+    fetchGroupPrice("칠흑", start, end, setChilheukTableState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chilheukView]);
+
+  useEffect(() => {
+    if (eternelView !== "table") return;
+    const { start, end } = getTableRange();
+    fetchGroupPrice("에테르넬", start, end, setEternelTableState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eternelView]);
+
+  useEffect(() => {
+    if (seedView !== "table") return;
+    const { start, end } = getTableRange();
+    fetchGroupPrice("시드링", start, end, setSeedTableState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedView]);
 
   // ====== 2) 마켓 데이터 ======
   const fetchMarket = (item: MarketItem) => {
@@ -366,8 +603,7 @@ export default function Home() {
         setMarketHistory(points || []);
         setMarketToday(todayPrice);
         setMarketChange(changePercent);
-        const latest =
-          points.length > 0 ? points[points.length - 1].date : null;
+        const latest = points.length > 0 ? points[points.length - 1].date : null;
         setMarketLatestDate(latest);
       })
       .catch((err) => {
@@ -401,7 +637,7 @@ export default function Home() {
           id: n.id,
           type: convertType(n.type),
           title: n.title,
-          content: n.content, // 🔹 summary → content
+          content: n.content,
           createdAt: n.createdAt,
         }));
 
@@ -425,32 +661,25 @@ export default function Home() {
     );
   }
 
-  // ====== 모두 선택/해제 계산 ======
+  // ====== 모두 선택/해제 계산 (그래프용) ======
   const chilheukLabels = chilheukState.datasets.map((ds) => ds.label);
   const eternelLabels = eternelState.datasets.map((ds) => ds.label);
   const seedRingLabels = seedRingState.datasets.map((ds) => ds.label);
 
   const chilheukAllHidden =
-    chilheukLabels.length > 0 &&
-    chilheukLabels.every((lbl) => hiddenLabels.has(lbl));
+    chilheukLabels.length > 0 && chilheukLabels.every((lbl) => hiddenLabels.has(lbl));
   const eternelAllHidden =
-    eternelLabels.length > 0 &&
-    eternelLabels.every((lbl) => hiddenLabels.has(lbl));
+    eternelLabels.length > 0 && eternelLabels.every((lbl) => hiddenLabels.has(lbl));
   const seedRingAllHidden =
-    seedRingLabels.length > 0 &&
-    seedRingLabels.every((lbl) => hiddenLabels.has(lbl));
+    seedRingLabels.length > 0 && seedRingLabels.every((lbl) => hiddenLabels.has(lbl));
 
   const toggleAllForLabels = (labels: string[]) => {
     setHiddenLabels((prev) => {
       const next = new Set(prev);
-      const allHidden =
-        labels.length > 0 && labels.every((lbl) => next.has(lbl));
+      const allHidden = labels.length > 0 && labels.every((lbl) => next.has(lbl));
 
-      if (allHidden) {
-        labels.forEach((lbl) => next.delete(lbl));
-      } else {
-        labels.forEach((lbl) => next.add(lbl));
-      }
+      if (allHidden) labels.forEach((lbl) => next.delete(lbl));
+      else labels.forEach((lbl) => next.add(lbl));
       return next;
     });
   };
@@ -466,9 +695,7 @@ export default function Home() {
   const lineOptions: any = {
     responsive: true,
     plugins: {
-      legend: {
-        display: false,
-      },
+      legend: { display: false },
       tooltip: {
         callbacks: {
           label: (context: any) => {
@@ -484,12 +711,8 @@ export default function Home() {
     scales: {
       x: {
         type: "category",
-        ticks: {
-          color: "#9ca3af",
-        },
-        grid: {
-          color: "rgba(148, 163, 184, 0.15)",
-        },
+        ticks: { color: "#9ca3af" },
+        grid: { color: "rgba(148, 163, 184, 0.15)" },
       },
       y: {
         ticks: {
@@ -500,9 +723,7 @@ export default function Home() {
             return formatToEok(num);
           },
         },
-        grid: {
-          color: "rgba(148, 163, 184, 0.15)",
-        },
+        grid: { color: "rgba(148, 163, 184, 0.15)" },
       },
     },
   };
@@ -514,10 +735,7 @@ export default function Home() {
   const modalChartOptions: any = {
     responsive: true,
     maintainAspectRatio: false,
-    interaction: {
-      mode: "index",
-      intersect: false,
-    },
+    interaction: { mode: "index", intersect: false },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -554,13 +772,27 @@ export default function Home() {
     newsItems
       .filter((n) => n.type === type)
       .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       )[0];
 
   const latestNews = latestByType("뉴스");
   const latestUpdate = latestByType("업데이트");
   const latestNotice = latestByType("공지");
+
+  // 공통 버튼 스타일
+  const headerMiniBtn: React.CSSProperties = {
+    fontSize: "0.78rem",
+    padding: "6px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(148,163,184,0.7)",
+    background: "transparent",
+    color: "#e5e7eb",
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+
+  // ✅ B안: 표에서는 토글 비활성화 + 숨김 없음
+  const noopToggle = () => {};
 
   return (
     <main className={styles.page}>
@@ -570,14 +802,13 @@ export default function Home() {
       >
         <div className={styles["hero-bg"]} />
         <div className={`${styles["hero-content"]} md:w-full`}>
-          <div
-            className={`${styles["hero-title"]} text-2xl md:text-4xl md:-mt-4`}
-          >
+          <h1 className={`${styles["hero-title"]} text-2xl md:text-4xl md:-mt-4`}>
             📈 MAPLE ECONOMY
-          </div>
-          <div className={styles["hero-sub"]}>
+          </h1>
+
+          <p className={styles["hero-sub"]}>
             메이플의 각종 경제지표를 한 눈에.
-          </div>
+          </p>
 
           <div className={`${styles["search-box"]} mx-auto md:mt-12`}>
             <input
@@ -592,10 +823,7 @@ export default function Home() {
                 }
               }}
             />
-            <button
-              className={styles["search-button"]}
-              onClick={handleCharacterSearch}
-            >
+            <button className={styles["search-button"]} onClick={handleCharacterSearch}>
               검색
             </button>
           </div>
@@ -622,12 +850,9 @@ export default function Home() {
             <ul className={styles["news-list"]}>
               {latestNews && (
                 <li>
-                  <span
-                    className={`${styles["news-tag"]} ${styles["tag-gold"]}`}
-                  >
+                  <span className={`${styles["news-tag"]} ${styles["tag-gold"]}`}>
                     뉴스
                   </span>
-
                   <span
                     className={styles["news-clickable"]}
                     onClick={() => {
@@ -637,7 +862,6 @@ export default function Home() {
                   >
                     {latestNews.title}
                   </span>
-
                   <span className={styles["news-date"]}>
                     {latestNews.createdAt.slice(0, 10)}
                   </span>
@@ -646,12 +870,9 @@ export default function Home() {
 
               {latestUpdate && (
                 <li>
-                  <span
-                    className={`${styles["news-tag"]} ${styles["tag-blue"]}`}
-                  >
+                  <span className={`${styles["news-tag"]} ${styles["tag-blue"]}`}>
                     업데이트
                   </span>
-
                   <span
                     className={styles["news-clickable"]}
                     onClick={() => {
@@ -661,7 +882,6 @@ export default function Home() {
                   >
                     {latestUpdate.title}
                   </span>
-
                   <span className={styles["news-date"]}>
                     {latestUpdate.createdAt.slice(0, 10)}
                   </span>
@@ -670,12 +890,9 @@ export default function Home() {
 
               {latestNotice && (
                 <li>
-                  <span
-                    className={`${styles["news-tag"]} ${styles["tag-gray"]}`}
-                  >
+                  <span className={`${styles["news-tag"]} ${styles["tag-gray"]}`}>
                     공지
                   </span>
-
                   <span
                     className={styles["news-clickable"]}
                     onClick={() => {
@@ -685,7 +902,6 @@ export default function Home() {
                   >
                     {latestNotice.title}
                   </span>
-
                   <span className={styles["news-date"]}>
                     {latestNotice.createdAt.slice(0, 10)}
                   </span>
@@ -720,9 +936,7 @@ export default function Home() {
                     className={[
                       styles["news-filter-btn"],
                       styles["market-toggle-btn"],
-                      selectedMarketItem === label
-                        ? styles["news-filter-btn-active"]
-                        : "",
+                      selectedMarketItem === label ? styles["news-filter-btn-active"] : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
@@ -736,14 +950,10 @@ export default function Home() {
 
             <div className={styles["summary-row"]}>
               <div className={styles["summary-label"]}>오늘 가격</div>
-              <div
-                className={`${styles["summary-value"]} ${styles.highlight}`}
-              >
+              <div className={`${styles["summary-value"]} ${styles.highlight}`}>
                 {marketToday !== null
                   ? selectedMarketItem === "메소 마켓"
-                    ? `${marketToday.toLocaleString(
-                        "ko-KR"
-                      )} 메포 / 1억 메소`
+                    ? `${marketToday.toLocaleString("ko-KR")} 메포 / 1억 메소`
                     : `${marketToday.toLocaleString("ko-KR")} 메소`
                   : "—"}
               </div>
@@ -768,9 +978,9 @@ export default function Home() {
               >
                 {marketChange == null
                   ? "—"
-                  : `${
-                      marketChange > 0 ? "▲" : marketChange < 0 ? "▼" : "―"
-                    } ${Math.abs(marketChange).toFixed(1)}%`}
+                  : `${marketChange > 0 ? "▲" : marketChange < 0 ? "▼" : "―"} ${Math.abs(
+                      marketChange
+                    ).toFixed(1)}%`}
               </div>
             </div>
 
@@ -781,10 +991,7 @@ export default function Home() {
               </div>
             </div>
 
-            <button
-              className={styles["graph-btn"]}
-              onClick={() => setMesoModalOpen(true)}
-            >
+            <button className={styles["graph-btn"]} onClick={() => setMesoModalOpen(true)}>
               📊 그래프 보기
             </button>
 
@@ -803,7 +1010,7 @@ export default function Home() {
                   alt="칠흑"
                   className={styles["set-icon"]}
                 />
-                <h2>칠흑 세트</h2>
+                <h2>칠흑 시세</h2>
                 <button
                   type="button"
                   style={{
@@ -822,52 +1029,66 @@ export default function Home() {
                 </button>
               </div>
 
-              <button
-                className={styles["toggle-btn"]}
-                onClick={() => setShowChilheuk((prev) => !prev)}
-              >
-                {showChilheuk ? "접기 ▲" : "펼치기 ▼"}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  style={headerMiniBtn}
+                  onClick={() => setChilheukView((v) => (v === "chart" ? "table" : "chart"))}
+                >
+                  {chilheukView === "chart" ? "표" : "그래프"}
+                </button>
+
+                <button className={styles["toggle-btn"]} onClick={() => setShowChilheuk((p) => !p)}>
+                  {showChilheuk ? "접기 ▲" : "펼치기 ▼"}
+                </button>
+              </div>
             </div>
 
             <ItemLegend
-              datasets={chilheukState.datasets}
-              hiddenLabels={hiddenLabels}
-              onToggle={handleToggleLabel}
+              datasets={chilheukView === "chart" ? chilheukState.datasets : chilheukTableState.datasets}
+              hiddenLabels={chilheukView === "chart" ? hiddenLabels : new Set()}
+              onToggle={chilheukView === "chart" ? handleToggleLabel : noopToggle}
             />
 
             {showChilheuk && (
-              <Line
-                data={{
-                  labels: chilheukState.labels,
-                  datasets: chilheukState.datasets.filter(
-                    (ds) => !hiddenLabels.has(ds.label)
-                  ),
-                }}
-                options={lineOptions}
-              />
+              <>
+                {chilheukView === "chart" ? (
+                  <Line
+                    data={{
+                      labels: chilheukState.labels,
+                      datasets: chilheukState.datasets.filter((ds) => !hiddenLabels.has(ds.label)),
+                    }}
+                    options={lineOptions}
+                  />
+                ) : (
+                  <PriceTable groupState={chilheukTableState} formatToEok={formatToEok} />
+                )}
+              </>
             )}
 
-            <div className="mt-8 w-full flex justify-end gap-3">
-              <div>
-                <label className="mr-4">시작 날짜:</label>
-                <input
-                  type="date"
-                  value={chilheukDateStart}
-                  onChange={(e) => setchilheukDateStart(e.target.value)}
-                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+            {/* ✅ 표에서는 날짜 버튼 숨김 */}
+            {chilheukView === "chart" && (
+              <div className="mt-8 w-full flex justify-end gap-3">
+                <div>
+                  <label className="mr-4">시작 날짜:</label>
+                  <input
+                    type="date"
+                    value={chilheukDateStart}
+                    onChange={(e) => setchilheukDateStart(e.target.value)}
+                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mr-4">종료 날짜:</label>
+                  <input
+                    type="date"
+                    value={chilheukDateEnd}
+                    onChange={(e) => setchilheukDateEnd(e.target.value)}
+                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="mr-4">종료 날짜:</label>
-                <input
-                  type="date"
-                  value={chilheukDateEnd}
-                  onChange={(e) => setchilheukDateEnd(e.target.value)}
-                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
+            )}
           </section>
 
           {/* 에테르넬 세트 */}
@@ -879,7 +1100,7 @@ export default function Home() {
                   alt="에테르넬"
                   className={styles["set-icon"]}
                 />
-                <h2>에테르넬 세트</h2>
+                <h2>에테르넬 시세</h2>
                 <button
                   type="button"
                   style={{
@@ -898,52 +1119,65 @@ export default function Home() {
                 </button>
               </div>
 
-              <button
-                className={styles["toggle-btn"]}
-                onClick={() => setShowEternel((prev) => !prev)}
-              >
-                {showEternel ? "접기 ▲" : "펼치기 ▼"}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  style={headerMiniBtn}
+                  onClick={() => setEternelView((v) => (v === "chart" ? "table" : "chart"))}
+                >
+                  {eternelView === "chart" ? "표" : "그래프"}
+                </button>
+
+                <button className={styles["toggle-btn"]} onClick={() => setShowEternel((p) => !p)}>
+                  {showEternel ? "접기 ▲" : "펼치기 ▼"}
+                </button>
+              </div>
             </div>
 
             <ItemLegend
-              datasets={eternelState.datasets}
-              hiddenLabels={hiddenLabels}
-              onToggle={handleToggleLabel}
+              datasets={eternelView === "chart" ? eternelState.datasets : eternelTableState.datasets}
+              hiddenLabels={eternelView === "chart" ? hiddenLabels : new Set()}
+              onToggle={eternelView === "chart" ? handleToggleLabel : noopToggle}
             />
 
             {showEternel && (
-              <Line
-                data={{
-                  labels: eternelState.labels,
-                  datasets: eternelState.datasets.filter(
-                    (ds) => !hiddenLabels.has(ds.label)
-                  ),
-                }}
-                options={lineOptions}
-              />
+              <>
+                {eternelView === "chart" ? (
+                  <Line
+                    data={{
+                      labels: eternelState.labels,
+                      datasets: eternelState.datasets.filter((ds) => !hiddenLabels.has(ds.label)),
+                    }}
+                    options={lineOptions}
+                  />
+                ) : (
+                  <PriceTable groupState={eternelTableState} formatToEok={formatToEok} />
+                )}
+              </>
             )}
 
-            <div className="mt-8 w-full flex justify-end gap-3">
-              <div>
-                <label className="mr-4">시작 날짜:</label>
-                <input
-                  type="date"
-                  value={eternelDateStart}
-                  onChange={(e) => setEternelDateStart(e.target.value)}
-                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+            {eternelView === "chart" && (
+              <div className="mt-8 w-full flex justify-end gap-3">
+                <div>
+                  <label className="mr-4">시작 날짜:</label>
+                  <input
+                    type="date"
+                    value={eternelDateStart}
+                    onChange={(e) => setEternelDateStart(e.target.value)}
+                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mr-4">종료 날짜:</label>
+                  <input
+                    type="date"
+                    value={eternelDateEnd}
+                    onChange={(e) => setEternelDateEnd(e.target.value)}
+                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="mr-4">종료 날짜:</label>
-                <input
-                  type="date"
-                  value={eternelDateEnd}
-                  onChange={(e) => setEternelDateEnd(e.target.value)}
-                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
+            )}
           </section>
 
           {/* 시드링 세트 */}
@@ -955,7 +1189,7 @@ export default function Home() {
                   alt="시드링"
                   className={styles["set-icon"]}
                 />
-                <h2>시드링 세트</h2>
+                <h2>시드링 시세</h2>
                 <button
                   type="button"
                   style={{
@@ -974,78 +1208,80 @@ export default function Home() {
                 </button>
               </div>
 
-              <button
-                className={styles["toggle-btn"]}
-                onClick={() => setShowSeed((prev) => !prev)}
-              >
-                {showSeed ? "접기 ▲" : "펼치기 ▼"}
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  style={headerMiniBtn}
+                  onClick={() => setSeedView((v) => (v === "chart" ? "table" : "chart"))}
+                >
+                  {seedView === "chart" ? "표" : "그래프"}
+                </button>
+
+                <button className={styles["toggle-btn"]} onClick={() => setShowSeed((p) => !p)}>
+                  {showSeed ? "접기 ▲" : "펼치기 ▼"}
+                </button>
+              </div>
             </div>
 
             <ItemLegend
-              datasets={seedRingState.datasets}
-              hiddenLabels={hiddenLabels}
-              onToggle={handleToggleLabel}
+              datasets={seedView === "chart" ? seedRingState.datasets : seedTableState.datasets}
+              hiddenLabels={seedView === "chart" ? hiddenLabels : new Set()}
+              onToggle={seedView === "chart" ? handleToggleLabel : noopToggle}
             />
 
             {showSeed && (
-              <Line
-                data={{
-                  labels: seedRingState.labels,
-                  datasets: seedRingState.datasets.filter(
-                    (ds) => !hiddenLabels.has(ds.label)
-                  ),
-                }}
-                options={lineOptions}
-              />
+              <>
+                {seedView === "chart" ? (
+                  <Line
+                    data={{
+                      labels: seedRingState.labels,
+                      datasets: seedRingState.datasets.filter((ds) => !hiddenLabels.has(ds.label)),
+                    }}
+                    options={lineOptions}
+                  />
+                ) : (
+                  <PriceTable groupState={seedTableState} formatToEok={formatToEok} />
+                )}
+              </>
             )}
 
-            <div className="mt-8 w-full flex justify-end gap-3">
-              <div>
-                <label className="mr-4">시작 날짜:</label>
-                <input
-                  type="date"
-                  value={seedRingDateStart}
-                  onChange={(e) => setSeedRingDateStart(e.target.value)}
-                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+            {seedView === "chart" && (
+              <div className="mt-8 w-full flex justify-end gap-3">
+                <div>
+                  <label className="mr-4">시작 날짜:</label>
+                  <input
+                    type="date"
+                    value={seedRingDateStart}
+                    onChange={(e) => setSeedRingDateStart(e.target.value)}
+                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mr-4">종료 날짜:</label>
+                  <input
+                    type="date"
+                    value={seedRingDateEnd}
+                    onChange={(e) => setSeedRingDateEnd(e.target.value)}
+                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="mr-4">종료 날짜:</label>
-                <input
-                  type="date"
-                  value={seedRingDateEnd}
-                  onChange={(e) => setSeedRingDateEnd(e.target.value)}
-                  className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
+            )}
           </section>
         </div>
       </section>
 
       {/* 마켓 그래프 모달 */}
       {mesoModalOpen && (
-        <div
-          className={styles["modal-backdrop"]}
-          onClick={() => setMesoModalOpen(false)}
-        >
-          <div
-            className={styles.modal}
-            onClick={(e) => {
-              e.stopPropagation();
-            }}
-          >
+        <div className={styles["modal-backdrop"]} onClick={() => setMesoModalOpen(false)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles["modal-header"]}>
               <span>
                 {selectedMarketItem === "메소 마켓"
                   ? "메소 마켓 시세 (일별)"
                   : "솔 에르다 조각 시세 (일별)"}
               </span>
-            <button
-                className={styles["modal-close"]}
-                onClick={() => setMesoModalOpen(false)}
-              >
+              <button className={styles["modal-close"]} onClick={() => setMesoModalOpen(false)}>
                 ✕
               </button>
             </div>
@@ -1077,17 +1313,11 @@ export default function Home() {
 
       {/* 뉴스 히스토리 모달 */}
       {newsModalOpen && (
-        <div
-          className={styles["modal-backdrop"]}
-          onClick={() => setNewsModalOpen(false)}
-        >
+        <div className={styles["modal-backdrop"]} onClick={() => setNewsModalOpen(false)}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles["modal-header"]}>
               <span>메이플 경제 뉴스 히스토리</span>
-              <button
-                className={styles["modal-close"]}
-                onClick={() => setNewsModalOpen(false)}
-              >
+              <button className={styles["modal-close"]} onClick={() => setNewsModalOpen(false)}>
                 ✕
               </button>
             </div>
@@ -1112,13 +1342,10 @@ export default function Home() {
             <div className={styles["modal-body"]}>
               <div className={styles["news-history-list"]}>
                 {newsItems
-                  .filter(
-                    (n) => newsFilter === "전체" || n.type === newsFilter
-                  )
+                  .filter((n) => newsFilter === "전체" || n.type === newsFilter)
                   .sort(
                     (a, b) =>
-                      new Date(b.createdAt).getTime() -
-                      new Date(a.createdAt).getTime()
+                      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
                   )
                   .map((n) => (
                     <div key={n.id} className={styles["news-history-item"]}>
@@ -1134,16 +1361,10 @@ export default function Home() {
                         >
                           {n.type}
                         </span>
-                        <span className={styles["news-history-date"]}>
-                          {n.createdAt}
-                        </span>
+                        <span className={styles["news-history-date"]}>{n.createdAt}</span>
                       </div>
-                      <div className={styles["news-history-title"]}>
-                        {n.title}
-                      </div>
-                      <div className={styles["news-history-summary"]}>
-                        {n.content} {/* 🔹 여기서도 summary → content */}
-                      </div>
+                      <div className={styles["news-history-title"]}>{n.title}</div>
+                      <div className={styles["news-history-summary"]}>{n.content}</div>
                     </div>
                   ))}
               </div>

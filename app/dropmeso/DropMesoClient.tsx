@@ -233,8 +233,6 @@ export default function DropMesoClient() {
         }
       );
 
-      console.log("character-equipment res:", res.data);
-
       const p1 = normalizePreset(res.data.presets[1]);
       const p2 = normalizePreset(res.data.presets[2]);
       const p3 = normalizePreset(res.data.presets[3]);
@@ -361,6 +359,15 @@ export default function DropMesoClient() {
     setTargetMesoInput(String(clamped));
   };
 
+  // ✅ (추가) 현재 "고정 사용" 체크된 아이템 이름들 수집
+  const lockedItemNames = useMemo(() => {
+    if (useManualInput) return []; // 수동 입력 모드는 itemName이 없으니 제외
+    if (!hasFetchedEquip) return [];
+    return (activePresetEquipment ?? [])
+      .filter((e) => e.useForHunting && e.itemName)
+      .map((e) => String(e.itemName));
+  }, [useManualInput, hasFetchedEquip, activePresetEquipment]);
+
   // 2. 최저 비용 세팅 계산 요청
   const handleOptimize = async () => {
     if (!activeEquipment) {
@@ -395,7 +402,8 @@ export default function DropMesoClient() {
         targetDrop,
         targetMeso,
         excludeKarma,
-        jobGroup: finalJobGroup, // 🔥 여기서 서버로 전달
+        jobGroup: finalJobGroup,
+        lockedItemNames, // ✅ 추가: 고정 사용 체크된 아이템 이름들
       });
 
       setResult(res.data as OptimizationResult);
@@ -428,13 +436,15 @@ export default function DropMesoClient() {
         <section className="grid gap-4 items-start md:grid-cols-7">
           {/* 왼쪽: 캐릭터 / 장비 */}
           {/* 1단계: 캐릭터 장비 불러오기 카드 */}
-          <div className={`${styles.card} md:h-full md:col-span-4 md:order-1 md:flex md:flex-col md:justify-between`}>
+          <div
+            className={`${styles.card} md:h-full md:col-span-4 md:order-1 md:flex md:flex-col md:justify-between`}
+          >
             <div className={styles.cardHeader}>
               <span className={styles.cardStep}>1</span>
               <div>
                 <div className={styles.cardTitle}>캐릭터 장비 불러오기</div>
                 <div className={styles.cardDesc}>
-                  넥슨 Open API를 통해 현재 장착 중인 사냥 템 프리셋을 불러옵니다. 
+                  넥슨 Open API를 통해 현재 장착 중인 사냥 템 프리셋을 불러옵니다.
                   <br />
                   (원치 않으면 아래에서 직접 입력도 가능합니다.)
                 </div>
@@ -465,13 +475,10 @@ export default function DropMesoClient() {
               {loadingEquip ? "불러오는 중..." : "장비 불러오기"}
             </button>
 
-            {equipError && (
-              <div className={styles.errorText}>{equipError}</div>
-            )}
+            {equipError && <div className={styles.errorText}>{equipError}</div>}
 
             {!useManualInput && characterJobGroup && (
-              <div className={styles.smallText} style={{ marginTop: 8 }}>
-              </div>
+              <div className={styles.smallText} style={{ marginTop: 8 }}></div>
             )}
           </div>
 
@@ -481,9 +488,7 @@ export default function DropMesoClient() {
               <span className={styles.cardStep}>1-2</span>
               <div>
                 <div className={styles.cardTitle}>
-                  {useManualInput
-                    ? "직접 입력한 사냥 세팅"
-                    : "현재 장착 중인 사냥 템"}
+                  {useManualInput ? "직접 입력한 사냥 세팅" : "현재 장착 중인 사냥 템"}
                 </div>
                 <div className={styles.cardDesc}>
                   {useManualInput
@@ -509,15 +514,14 @@ export default function DropMesoClient() {
                             border: active
                               ? "1px solid #60a5fa"
                               : "1px solid rgba(148,163,184,0.5)",
-                            background: active
-                              ? "rgba(37,99,235,0.35)"
-                              : "transparent",
+                            background: active ? "rgba(37,99,235,0.35)" : "transparent",
                             color: active ? "#e5f2ff" : "#cbd5f5",
                             cursor: "pointer",
                           }}
                           onClick={() => {
                             setSelectedPreset(no as 1 | 2 | 3);
                             setResult(null);
+                            setOptError(null);
                           }}
                         >
                           프리셋 {no}
@@ -578,10 +582,10 @@ export default function DropMesoClient() {
             {useManualInput && (
               <>
                 <p className={styles.smallText}>
-                  각 슬롯에 현재 착용 중인 아이템의 드랍률 · 메소 획득량을
-                  입력하세요. <br />
-                  드랍/메획이 0%여도, &quot;해당 아이템 사용&quot;
-                  체크 시 해당 슬롯은 고정되고, <br />
+                  각 슬롯에 현재 착용 중인 아이템의 드랍률 · 메소 획득량을 입력하세요.
+                  <br />
+                  드랍/메획이 0%여도, &quot;해당 아이템 사용&quot; 체크 시 해당 슬롯은 고정되고,
+                  <br />
                   나머지 슬롯에서만 부족한 수치를 맞춥니다.
                 </p>
 
@@ -622,19 +626,14 @@ export default function DropMesoClient() {
                             }}
                           >
                             <span>해당 아이템 사용</span>
-                            <label
-                              className={styles.checkboxLabel}
-                              style={{ fontSize: "0.7rem" }}
-                            >
+                            <label className={styles.checkboxLabel} style={{ fontSize: "0.7rem" }}>
                               <input
                                 type="checkbox"
                                 checked={manualAnyChecked}
                                 onChange={handleManualToggleAll}
                                 style={{ transform: "scale(0.9)" }}
                               />
-                              <span>
-                                {manualAnyChecked ? "모두 해제" : "모두 선택"}
-                              </span>
+                              <span>{manualAnyChecked ? "모두 해제" : "모두 선택"}</span>
                             </label>
                           </div>
                         </th>
@@ -703,9 +702,8 @@ export default function DropMesoClient() {
               <>
                 {!hasFetchedEquip ? (
                   <div className={styles.emptyState}>
-                    아직 캐릭터 장비를 불러오지 않았습니다. 위 카드에서
-                    닉네임을 입력하고 &quot;장비 불러오기&quot; 버튼을
-                    눌러주세요.
+                    아직 캐릭터 장비를 불러오지 않았습니다. 위 카드에서 닉네임을 입력하고
+                    &quot;장비 불러오기&quot; 버튼을 눌러주세요.
                   </div>
                 ) : (
                   <div className={styles.tableWrapper}>
@@ -726,19 +724,14 @@ export default function DropMesoClient() {
                               }}
                             >
                               <span>해당 아이템 사용</span>
-                              <label
-                                className={styles.checkboxLabel}
-                                style={{ fontSize: "0.7rem" }}
-                              >
+                              <label className={styles.checkboxLabel} style={{ fontSize: "0.7rem" }}>
                                 <input
                                   type="checkbox"
                                   checked={presetAnyChecked}
                                   onChange={handlePresetToggleAll}
                                   style={{ transform: "scale(0.9)" }}
                                 />
-                                <span>
-                                  {presetAnyChecked ? "모두 해제" : "모두 선택"}
-                                </span>
+                                <span>{presetAnyChecked ? "모두 해제" : "모두 선택"}</span>
                               </label>
                             </div>
                           </th>
@@ -749,16 +742,8 @@ export default function DropMesoClient() {
                           <tr key={item.slot}>
                             <td>{SLOT_LABEL[item.slot]}</td>
                             <td>{item.itemName ?? "-"}</td>
-                            <td>
-                              {item.dropPct !== 0
-                                ? `${item.dropPct}%`
-                                : "-"}
-                            </td>
-                            <td>
-                              {item.mesoPct !== 0
-                                ? `${item.mesoPct}%`
-                                : "-"}
-                            </td>
+                            <td>{item.dropPct !== 0 ? `${item.dropPct}%` : "-"}</td>
+                            <td>{item.mesoPct !== 0 ? `${item.mesoPct}%` : "-"}</td>
                             <td>
                               <label className={styles.checkboxLabel}>
                                 <input
@@ -787,9 +772,8 @@ export default function DropMesoClient() {
               <div>
                 <div className={styles.cardTitle}>목표 수치 설정</div>
                 <div className={styles.cardDesc}>
-                  &quot;해당 아이템 사용&quot;으로 체크된 슬롯들의 드랍/메획을
-                  현재 세팅으로 보고, 나머지 부위에서 부족한 수치를
-                  채웁니다.
+                  &quot;해당 아이템 사용&quot;으로 체크된 슬롯들의 드랍/메획을 현재 세팅으로 보고,
+                  나머지 부위에서 부족한 수치를 채웁니다.
                 </div>
               </div>
             </div>
@@ -844,9 +828,7 @@ export default function DropMesoClient() {
                 checked={excludeKarma}
                 onChange={(e) => setExcludeKarma(e.target.checked)}
               />
-              <span>
-                가위 횟수 제한 달린 템을 제외하고 추천 (영구 교환가능 템만 추천)
-              </span>
+              <span>가위 횟수 제한 달린 템을 제외하고 추천 (영구 교환가능 템만 추천)</span>
             </label>
           </div>
 
@@ -857,8 +839,8 @@ export default function DropMesoClient() {
               <div>
                 <div className={styles.cardTitle}>최저 비용 세팅 계산</div>
                 <div className={styles.cardDesc}>
-                  DB에 저장된 시세를 바탕으로, 가장 적은 비용으로 목표를
-                  만족하는 조합을 찾습니다. 최대 2분까지 소요될 수 있습니다.
+                  DB에 저장된 시세를 바탕으로, 가장 적은 비용으로 목표를 만족하는 조합을 찾습니다.
+                  최대 2분까지 소요될 수 있습니다.
                 </div>
               </div>
             </div>
@@ -885,15 +867,11 @@ export default function DropMesoClient() {
                 <div className={styles.resultSummary}>
                   <div>
                     <div className={styles.resultLabel}>최종 아이템 드랍률</div>
-                    <div className={styles.resultValue}>
-                      {result.finalDrop}%
-                    </div>
+                    <div className={styles.resultValue}>{result.finalDrop}%</div>
                   </div>
                   <div>
                     <div className={styles.resultLabel}>최종 메소 획득량</div>
-                    <div className={styles.resultValue}>
-                      {result.finalMeso}%
-                    </div>
+                    <div className={styles.resultValue}>{result.finalMeso}%</div>
                   </div>
                   <div>
                     <div className={styles.resultLabel}>예상 총 비용</div>
@@ -908,9 +886,7 @@ export default function DropMesoClient() {
                 <div className={styles.sectionTitle}>구매 추천 아이템</div>
 
                 {result.itemsToBuy.length === 0 ? (
-                  <div className={styles.emptyState}>
-                    추가로 구매해야 하는 아이템이 없습니다. 🎉
-                  </div>
+                  <div className={styles.emptyState}>추가로 구매해야 하는 아이템이 없습니다. 🎉</div>
                 ) : (
                   <div className={styles.tableWrapper}>
                     <table className={styles.table}>
@@ -926,17 +902,9 @@ export default function DropMesoClient() {
                       <tbody>
                         {[...result.itemsToBuy]
                           .sort((a, b) => {
-                            // 1) 얼굴장식은 항상 맨 위
-                            if (a.slot === "얼굴장식" && b.slot !== "얼굴장식")
-                              return -1;
-                            if (b.slot === "얼굴장식" && a.slot !== "얼굴장식")
-                              return 1;
-
-                            // 2) 나머지는 ALL_SLOTS 순서대로
-                            return (
-                              ALL_SLOTS.indexOf(a.slot) -
-                              ALL_SLOTS.indexOf(b.slot)
-                            );
+                            if (a.slot === "얼굴장식" && b.slot !== "얼굴장식") return -1;
+                            if (b.slot === "얼굴장식" && a.slot !== "얼굴장식") return 1;
+                            return ALL_SLOTS.indexOf(a.slot) - ALL_SLOTS.indexOf(b.slot);
                           })
                           .map((item, idx) => (
                             <tr key={`${item.slot}-${idx}`}>

@@ -802,10 +802,13 @@ export default function Home() {
       >
         <div className={styles["hero-bg"]} />
         <div className={`${styles["hero-content"]} md:w-full`}>
-          <div className={`${styles["hero-title"]} text-2xl md:text-4xl md:-mt-4`}>
+          <h1 className={`${styles["hero-title"]} text-2xl md:text-4xl md:-mt-4`}>
             📈 MAPLE ECONOMY
-          </div>
-          <div className={styles["hero-sub"]}>메이플의 각종 경제지표를 한 눈에.</div>
+          </h1>
+
+          <p className={styles["hero-sub"]}>
+            메이플의 각종 경제지표를 한 눈에.
+          </p>
 
           <div className={`${styles["search-box"]} mx-auto md:mt-12`}>
             <input
@@ -1007,7 +1010,7 @@ export default function Home() {
                   alt="칠흑"
                   className={styles["set-icon"]}
                 />
-                <h2>칠흑 세트</h2>
+                <h2>칠흑 시세</h2>
                 <button
                   type="button"
                   style={{
@@ -1097,7 +1100,7 @@ export default function Home() {
                   alt="에테르넬"
                   className={styles["set-icon"]}
                 />
-                <h2>에테르넬 세트</h2>
+                <h2>에테르넬 시세</h2>
                 <button
                   type="button"
                   style={{
@@ -1186,7 +1189,7 @@ export default function Home() {
                   alt="시드링"
                   className={styles["set-icon"]}
                 />
-                <h2>시드링 세트</h2>
+                <h2>시드링 시세</h2>
                 <button
                   type="button"
                   style={{

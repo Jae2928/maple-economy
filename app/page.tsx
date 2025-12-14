@@ -456,12 +456,11 @@ export default function Home() {
   const formatDate = (d: Date) => d.toISOString().slice(0, 10);
 
   // ✅ 표는 항상 "오늘 포함 8일치" (오늘 ~ 7일 전)
-  const getTableRange = () => {
-    const today = new Date();
-    const end = formatDate(today);
-    const startDate = new Date();
-    startDate.setDate(today.getDate() - 7);
-    const start = formatDate(startDate);
+  const getTableRangeFromLatest = (latest: string) => {
+    const end = latest;
+    const d = new Date(latest);
+    d.setDate(d.getDate() - 7);
+    const start = d.toISOString().slice(0, 10);
     return { start, end };
   };
 
@@ -565,24 +564,36 @@ export default function Home() {
   // ✅ 표로 전환될 때는 자동으로 8일치 데이터 fetch (전주 대비 기본 표시)
   useEffect(() => {
     if (chilheukView !== "table") return;
-    const { start, end } = getTableRange();
+    if (!chilheukState.labels.length) return;
+
+    const latest = chilheukState.labels[chilheukState.labels.length - 1];
+    const { start, end } = getTableRangeFromLatest(latest);
+
     fetchGroupPrice("칠흑", start, end, setChilheukTableState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chilheukView]);
+  }, [chilheukView, chilheukState.labels]);
 
   useEffect(() => {
     if (eternelView !== "table") return;
-    const { start, end } = getTableRange();
+    if (!eternelState.labels.length) return;
+
+    const latest = eternelState.labels[eternelState.labels.length - 1];
+    const { start, end } = getTableRangeFromLatest(latest);
+
     fetchGroupPrice("에테르넬", start, end, setEternelTableState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eternelView]);
+  }, [eternelView, eternelState.labels]);
 
   useEffect(() => {
     if (seedView !== "table") return;
-    const { start, end } = getTableRange();
+    if (!seedRingState.labels.length) return;
+
+    const latest = seedRingState.labels[seedRingState.labels.length - 1];
+    const { start, end } = getTableRangeFromLatest(latest);
+
     fetchGroupPrice("시드링", start, end, setSeedTableState);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedView]);
+  }, [seedView, seedRingState.labels]);
 
   // ====== 2) 마켓 데이터 ======
   const fetchMarket = (item: MarketItem) => {

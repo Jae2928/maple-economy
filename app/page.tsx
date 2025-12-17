@@ -12,6 +12,7 @@ import {
 } from "chart.js";
 import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 
@@ -53,7 +54,7 @@ type NoticeRow = {
 };
 
 type NewsType = "뉴스" | "업데이트" | "공지";
-type MarketItem = "메소 마켓" | "솔 에르다 조각";
+type MarketItem = "메소 마켓" | "솔 에르다 조각" | "솔 에르다 조각(챌1)";
 
 type NewsItem = {
   id: number;
@@ -62,6 +63,13 @@ type NewsItem = {
   content: string;
   createdAt: string;
 };
+
+type GroupState = {
+  labels: string[];
+  datasets: Dataset[];
+};
+
+const emptyGroupState: GroupState = { labels: [], datasets: [] };
 
 const convertType = (type: NoticeRow["type"]): NewsType =>
   type === "NEWS" ? "뉴스" : type === "UPDATE" ? "업데이트" : "공지";
@@ -165,7 +173,6 @@ const groupDefs: Record<string, string[]> = {
     "마력이 깃든 안대",
     "몽환의 벨트",
     "미트라의 분노 : 전사",
-    "블랙 하트",
     "저주받은 적의 마도서",
     "창세의 뱃지",
     "커맨더 포스 이어링",
@@ -183,14 +190,12 @@ const groupDefs: Record<string, string[]> = {
   시드링: ["리스트레인트 링 LV4", "컨티뉴어스 링 LV4"],
 };
 
-type GroupKey = "칠흑" | "에테르넬" | "시드링";
-
-type GroupState = {
-  labels: string[];
-  datasets: Dataset[];
+// ====== 챌린저스용 그룹 ======
+const challengerGroupDefs: Record<string, string[]> = {
+  "챌여명": ["가디언 엔젤 링", "트와일라이트 마크", "에스텔라 이어링", "데이브레이크 펜던트"],
+  "챌칠흑": [...groupDefs.칠흑],
+  "챌시드링": [...groupDefs.시드링],
 };
-
-const emptyGroupState: GroupState = { labels: [], datasets: [] };
 
 // ---------- 표 렌더링용 ----------
 type TableRow = {
@@ -293,7 +298,7 @@ function PriceTable({
       });
   }, [groupState]);
 
-  const thBase: React.CSSProperties = {
+  const thBase: CSSProperties = {
     textAlign: "left",
     padding: isMobile ? "10px 8px" : "12px 12px",
     fontSize: isMobile ? "0.8rem" : "0.85rem",
@@ -301,7 +306,7 @@ function PriceTable({
     whiteSpace: "nowrap",
   };
 
-  const tdBase: React.CSSProperties = {
+  const tdBase: CSSProperties = {
     padding: isMobile ? "10px 8px" : "12px 12px",
     fontSize: isMobile ? "0.82rem" : "0.9rem",
     borderBottom: "1px solid rgba(148,163,184,0.18)",
@@ -413,6 +418,285 @@ function PriceTable({
   );
 }
 
+// =========================
+// ✅ 중복 제거용 공용 로직/훅/컴포넌트
+// =========================
+const formatDate = (d: Date) => d.toISOString().slice(0, 10);
+
+// 그래프 기본: 최근 7일(오늘 포함)
+function getDefaultChartRange() {
+  const today = new Date();
+  const end = formatDate(today);
+  const startD = new Date(today);
+  startD.setDate(today.getDate() - 6);
+  const start = formatDate(startD);
+  return { start, end };
+}
+
+// 표는 항상 "latest 기준 8일치"
+function getTableRangeFromLatest(latest: string) {
+  const end = latest;
+  const d = new Date(latest);
+  d.setDate(d.getDate() - 7);
+  const start = d.toISOString().slice(0, 10);
+  return { start, end };
+}
+
+function buildGroupState(
+  rows: PriceRow[],
+  itemNames: string[],
+  colorFor: (label: string) => string
+): GroupState {
+  const filteredRows = rows.filter((r) => itemNames.includes(r.name));
+  const dateKeys = [...new Set(filteredRows.map((r) => r.date))].sort();
+  const items: string[] = [...new Set(filteredRows.map((r) => r.name))].sort();
+
+  const datasets: Dataset[] = items.map((itemName: string) => {
+    const itemData = filteredRows.filter((r) => r.name === itemName);
+    const dataPerDate = dateKeys.map((dateKey) => {
+      const entry = itemData.find((x) => x.date === dateKey);
+      return entry ? entry.price : null;
+    });
+
+    return {
+      label: itemName,
+      data: dataPerDate,
+      borderColor: colorFor(itemName),
+      borderWidth: 2,
+      tension: 0.2,
+    };
+  });
+
+  return { labels: dateKeys, datasets };
+}
+
+async function fetchPriceRows(apiPath: string, startDate: string, endDate: string, itemNames: string[]) {
+  const res = await axios.get(apiPath, {
+    params: { startDate, endDate, names: itemNames.join(",") },
+  });
+  return (res.data.data ?? []) as PriceRow[];
+}
+
+type PriceSectionConfig = {
+  id: string;
+  title: string;
+  icon: string;
+  apiPath: string;
+  itemNames: string[];
+  showToggleAll?: boolean; // 그래프에서만 "모두 선택/해제" 버튼
+};
+
+function usePriceSectionState({
+  apiPath,
+  itemNames,
+  colorFor,
+  updateLatestDate,
+}: {
+  apiPath: string;
+  itemNames: string[];
+  colorFor: (label: string) => string;
+  updateLatestDate?: (maxDate: string) => void; // 기존 그룹들에서만 latestDate 갱신용
+}) {
+  const { start: defaultStart, end: defaultEnd } = getDefaultChartRange();
+
+  const [view, setView] = useState<"chart" | "table">("table");
+  const [show, setShow] = useState(true);
+
+  const [dateStart, setDateStart] = useState<string>(defaultStart);
+  const [dateEnd, setDateEnd] = useState<string>(defaultEnd);
+
+  const [chartState, setChartState] = useState<GroupState>(emptyGroupState);
+  const [tableState, setTableState] = useState<GroupState>(emptyGroupState);
+
+  const validRange = (s: string, e: string) => s && e && new Date(s) <= new Date(e);
+
+  // 그래프 데이터 fetch
+  useEffect(() => {
+    if (!validRange(dateStart, dateEnd)) return;
+
+    (async () => {
+      try {
+        const rows = await fetchPriceRows(apiPath, dateStart, dateEnd, itemNames);
+        const state = buildGroupState(rows, itemNames, colorFor);
+        setChartState(state);
+
+        const maxDate = state.labels[state.labels.length - 1] ?? null;
+        if (maxDate && updateLatestDate) updateLatestDate(maxDate);
+      } catch (err) {
+        console.error("price fetch error:", err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiPath, dateStart, dateEnd, itemNames.join("|")]);
+
+  // 표로 전환되면 최신일 기준 8일치 fetch
+  useEffect(() => {
+    if (view !== "table") return;
+    if (!chartState.labels.length) return;
+
+    const latest = chartState.labels[chartState.labels.length - 1];
+    const { start, end } = getTableRangeFromLatest(latest);
+    if (!validRange(start, end)) return;
+
+    (async () => {
+      try {
+        const rows = await fetchPriceRows(apiPath, start, end, itemNames);
+        const state = buildGroupState(rows, itemNames, colorFor);
+        setTableState(state);
+      } catch (err) {
+        console.error("table fetch error:", err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, chartState.labels.length, apiPath, itemNames.join("|")]);
+
+  // 첫 진입이 표이므로: chart 로딩 완료 후 table도 한 번 바로 채움
+  useEffect(() => {
+    if (view !== "table") return;
+    if (!chartState.labels.length) return;
+
+    const latest = chartState.labels[chartState.labels.length - 1];
+    const { start, end } = getTableRangeFromLatest(latest);
+    if (!validRange(start, end)) return;
+
+    (async () => {
+      try {
+        const rows = await fetchPriceRows(apiPath, start, end, itemNames);
+        const state = buildGroupState(rows, itemNames, colorFor);
+        setTableState(state);
+      } catch (err) {
+        console.error("table init fetch error:", err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartState.labels.length]);
+
+  return {
+    view,
+    setView,
+    show,
+    setShow,
+    dateStart,
+    setDateStart,
+    dateEnd,
+    setDateEnd,
+    chartState,
+    tableState,
+  };
+}
+
+function PriceSection({
+  cfg,
+  section,
+  isMobile,
+  hiddenLabels,
+  onToggleLabel,
+  headerMiniBtn,
+  lineOptions,
+  formatToEok,
+  toggleAllForLabels,
+}: {
+  cfg: PriceSectionConfig;
+  section: ReturnType<typeof usePriceSectionState>;
+  isMobile: boolean;
+  hiddenLabels: Set<string>;
+  onToggleLabel: (label: string) => void;
+  headerMiniBtn: CSSProperties;
+  lineOptions: any;
+  formatToEok: (v: number) => string;
+  toggleAllForLabels: (labels: string[]) => void;
+}) {
+  const labels = section.chartState.datasets.map((ds) => ds.label);
+  const allHidden = labels.length > 0 && labels.every((lbl) => hiddenLabels.has(lbl));
+
+  return (
+    <section className={`${styles.card} ${styles["chart-card"]}`}>
+      <div className={styles["chart-header"]}>
+        <div className={styles["chart-title-wrap"]}>
+          <img src={cfg.icon} alt={cfg.title} className={styles["set-icon"]} />
+          <h2>{cfg.title}</h2>
+
+          {cfg.showToggleAll && section.view === "chart" && (
+            <button
+              type="button"
+              style={{
+                marginLeft: 8,
+                fontSize: "0.75rem",
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(148,163,184,0.7)",
+                background: "transparent",
+                color: "#e5e7eb",
+                cursor: "pointer",
+              }}
+              onClick={() => toggleAllForLabels(labels)}
+            >
+              {allHidden ? "모두 선택" : "모두 해제"}
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            style={headerMiniBtn}
+            onClick={() => section.setView((v) => (v === "chart" ? "table" : "chart"))}
+          >
+            {section.view === "chart" ? "표" : "그래프"}
+          </button>
+
+          <button className={styles["toggle-btn"]} onClick={() => section.setShow((p) => !p)}>
+            {section.show ? "접기 ▲" : "펼치기 ▼"}
+          </button>
+        </div>
+      </div>
+
+      {section.view === "chart" && (
+        <ItemLegend datasets={section.chartState.datasets} hiddenLabels={hiddenLabels} onToggle={onToggleLabel} />
+      )}
+
+      {section.show && (
+        <>
+          {section.view === "chart" ? (
+            <Line
+              data={{
+                labels: section.chartState.labels,
+                datasets: section.chartState.datasets.filter((ds) => !hiddenLabels.has(ds.label)),
+              }}
+              options={lineOptions}
+            />
+          ) : (
+            <PriceTable groupState={section.tableState} formatToEok={formatToEok} isMobile={isMobile} />
+          )}
+        </>
+      )}
+
+      {section.view === "chart" && (
+        <div className="mt-8 w-full flex justify-end gap-3">
+          <div>
+            <label className="mr-4">시작 날짜:</label>
+            <input
+              type="date"
+              value={section.dateStart}
+              onChange={(e) => section.setDateStart(e.target.value)}
+              className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="mr-4">종료 날짜:</label>
+            <input
+              type="date"
+              value={section.dateEnd}
+              onChange={(e) => section.setDateEnd(e.target.value)}
+              className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
   const isMobile = useIsMobile(640);
@@ -422,24 +706,8 @@ export default function Home() {
   const [newsModalOpen, setNewsModalOpen] = useState(false);
   const [newsFilter, setNewsFilter] = useState<NewsType | "전체">("전체");
 
-  // ====== 아이템 시세 (그룹별) ======
-  const [chilheukState, setChilheukState] = useState<GroupState>(emptyGroupState);
-  const [eternelState, setEternelState] = useState<GroupState>(emptyGroupState);
-  const [seedRingState, setSeedRingState] = useState<GroupState>(emptyGroupState);
-
-  // ✅ 표 전용(항상 8일치) 상태
-  const [chilheukTableState, setChilheukTableState] = useState<GroupState>(emptyGroupState);
-  const [eternelTableState, setEternelTableState] = useState<GroupState>(emptyGroupState);
-  const [seedTableState, setSeedTableState] = useState<GroupState>(emptyGroupState);
-
-  const [showChilheuk, setShowChilheuk] = useState(true);
-  const [showEternel, setShowEternel] = useState(true);
-  const [showSeed, setShowSeed] = useState(true);
-
-  // ✅ 표/그래프 토글 상태 (그룹별) - 🔥 기본은 표
-  const [chilheukView, setChilheukView] = useState<"chart" | "table">("table");
-  const [eternelView, setEternelView] = useState<"chart" | "table">("table");
-  const [seedView, setSeedView] = useState<"chart" | "table">("table");
+  // ====== ✅ 챌린저스 섹션 펼치기/접기 ======
+  const [showChallengers, setShowChallengers] = useState(false);
 
   const [searchName, setSearchName] = useState("");
   const [latestDate, setLatestDate] = useState<string | null>(null);
@@ -452,14 +720,6 @@ export default function Home() {
   const [marketHistory, setMarketHistory] = useState<MesoPoint[]>([]);
   const [mesoModalOpen, setMesoModalOpen] = useState(false);
 
-  // ====== 날짜 범위 선택 상태 (그래프용) ======
-  const [chilheukDateStart, setchilheukDateStart] = useState<string>("");
-  const [chilheukDateEnd, setchilheukDateEnd] = useState<string>("");
-  const [eternelDateStart, setEternelDateStart] = useState<string>("");
-  const [eternelDateEnd, setEternelDateEnd] = useState<string>("");
-  const [seedRingDateStart, setSeedRingDateStart] = useState<string>("");
-  const [seedRingDateEnd, setSeedRingDateEnd] = useState<string>("");
-
   // 🔥 그래프 기본 숨김 아이템 (그래프에서만 사용)
   const [hiddenLabels, setHiddenLabels] = useState<Set<string>>(
     () => new Set(["창세의 뱃지", "컴플리트 언더컨트롤"])
@@ -470,6 +730,16 @@ export default function Home() {
       const next = new Set(prev);
       if (next.has(label)) next.delete(label);
       else next.add(label);
+      return next;
+    });
+  };
+
+  const toggleAllForLabels = (labels: string[]) => {
+    setHiddenLabels((prev) => {
+      const next = new Set(prev);
+      const allHidden = labels.length > 0 && labels.every((lbl) => next.has(lbl));
+      if (allHidden) labels.forEach((lbl) => next.delete(lbl));
+      else labels.forEach((lbl) => next.add(lbl));
       return next;
     });
   };
@@ -489,171 +759,131 @@ export default function Home() {
     return `hsl(${hue}, 70%, 55%)`;
   };
 
-  const formatDate = (d: Date) => d.toISOString().slice(0, 10);
-
-  // ✅ 표는 항상 "오늘 포함 8일치" (오늘 ~ 7일 전)
-  const getTableRangeFromLatest = (latest: string) => {
-    const end = latest;
-    const d = new Date(latest);
-    d.setDate(d.getDate() - 7);
-    const start = d.toISOString().slice(0, 10);
-    return { start, end };
+  // ✅ latestDate 갱신(기존 그룹들에서만)
+  const updateLatestDate = (maxDate: string) => {
+    setLatestDate((prev) => {
+      if (!prev) return maxDate;
+      return prev > maxDate ? prev : maxDate;
+    });
   };
 
-  // ====== 1-1) 최초 로딩 시: 그래프는 최근 7일(오늘 포함 7일 = 6일 전부터) ======
-  useEffect(() => {
-    const today = new Date();
-    const end = formatDate(today);
-    const startDate = new Date();
-    startDate.setDate(today.getDate() - 6);
-    const start = formatDate(startDate);
+  // ====== 섹션 Config ======
+  const NORMAL_GROUPS: PriceSectionConfig[] = [
+    {
+      id: "chilheuk",
+      title: "칠흑 시세",
+      icon: "/item_image/item_혼돈의 칠흑 장신구 상자.png",
+      apiPath: "/api/price",
+      itemNames: groupDefs.칠흑,
+      showToggleAll: true,
+    },
+    {
+      id: "eternel",
+      title: "에테르넬 시세",
+      icon: "/item_image/item_맹세의 에테르넬 방어구 상자.png",
+      apiPath: "/api/price",
+      itemNames: groupDefs.에테르넬,
+      showToggleAll: true,
+    },
+    {
+      id: "seed",
+      title: "시드링 시세",
+      icon: "/item_image/item_백옥의 보스 반지 상자.png",
+      apiPath: "/api/price",
+      itemNames: groupDefs.시드링,
+      showToggleAll: true,
+    },
+  ];
 
-    setchilheukDateStart(start);
-    setchilheukDateEnd(end);
-    setEternelDateStart(start);
-    setEternelDateEnd(end);
-    setSeedRingDateStart(start);
-    setSeedRingDateEnd(end);
-  }, []);
+  const CHALLENGER_GROUPS: PriceSectionConfig[] = [
+    {
+      id: "chYeo",
+      title: "(챌)여명 시세",
+      icon: "/item_image/item_여명 세트 변환 주문서.png",
+      apiPath: "/api/challenger_price",
+      itemNames: challengerGroupDefs["챌여명"],
+      showToggleAll: true,
+    },
+    {
+      id: "chChil",
+      title: "(챌)칠흑 시세",
+      icon: "/item_image/item_혼돈의 칠흑 장신구 상자.png",
+      apiPath: "/api/challenger_price",
+      itemNames: challengerGroupDefs["챌칠흑"],
+      showToggleAll: true,
+    },
+    {
+      id: "chSeed",
+      title: "(챌)시드링 시세",
+      icon: "/item_image/item_백옥의 보스 반지 상자.png",
+      apiPath: "/api/challenger_price",
+      itemNames: challengerGroupDefs["챌시드링"],
+      showToggleAll: true,
+    },
+  ];
 
-  // ====== 공통 fetch (setter로 넣어서 재사용) ======
-  const fetchGroupPrice = async (
-    group: GroupKey,
-    startDate: string,
-    endDate: string,
-    setter: (s: GroupState) => void
-  ) => {
-    if (!startDate || !endDate) return;
-    if (new Date(startDate) > new Date(endDate)) return;
+  // ====== ✅ 섹션 상태(훅) ======
+  const normalSections = NORMAL_GROUPS.map((cfg) =>
+    usePriceSectionState({
+      apiPath: cfg.apiPath,
+      itemNames: cfg.itemNames,
+      colorFor,
+      updateLatestDate,
+    })
+  );
 
-    const itemNames = groupDefs[group];
-
-    try {
-      const res = await axios.get("/api/price", {
-        params: {
-          startDate,
-          endDate,
-          names: itemNames.join(","),
-        },
-      });
-
-      const rows: PriceRow[] = res.data.data;
-      const filteredRows = rows.filter((r) => itemNames.includes(r.name));
-
-      const dateKeys = [...new Set(filteredRows.map((r) => r.date))].sort();
-      const items: string[] = [...new Set(filteredRows.map((r) => r.name))].sort();
-
-      const datasets: Dataset[] = items.map((itemName: string) => {
-        const itemData = filteredRows.filter((r) => r.name === itemName);
-        const dataPerDate = dateKeys.map((dateKey) => {
-          const entry = itemData.find((x) => x.date === dateKey);
-          return entry ? entry.price : null;
-        });
-
-        return {
-          label: itemName,
-          data: dataPerDate,
-          borderColor: colorFor(itemName),
-          borderWidth: 2,
-          tension: 0.2,
-        };
-      });
-
-      const groupState: GroupState = { labels: dateKeys, datasets };
-      setter(groupState);
-
-      const maxDate = dateKeys[dateKeys.length - 1] ?? null;
-      if (maxDate) {
-        setLatestDate((prev) => {
-          if (!prev) return maxDate;
-          return prev > maxDate ? prev : maxDate;
-        });
-      }
-    } catch (err) {
-      console.error("price fetch error:", err);
-    }
-  };
-
-  // ====== 1-2) 그래프용 fetch ======
-  useEffect(() => {
-    if (!chilheukDateStart || !chilheukDateEnd) return;
-    fetchGroupPrice("칠흑", chilheukDateStart, chilheukDateEnd, setChilheukState);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chilheukDateStart, chilheukDateEnd]);
-
-  useEffect(() => {
-    if (!eternelDateStart || !eternelDateEnd) return;
-    fetchGroupPrice("에테르넬", eternelDateStart, eternelDateEnd, setEternelState);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eternelDateStart, eternelDateEnd]);
-
-  useEffect(() => {
-    if (!seedRingDateStart || !seedRingDateEnd) return;
-    fetchGroupPrice("시드링", seedRingDateStart, seedRingDateEnd, setSeedRingState);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedRingDateStart, seedRingDateEnd]);
-
-  // ✅ 표로 전환될 때는 자동으로 8일치 데이터 fetch
-  useEffect(() => {
-    if (chilheukView !== "table") return;
-    if (!chilheukState.labels.length) return;
-
-    const latest = chilheukState.labels[chilheukState.labels.length - 1];
-    const { start, end } = getTableRangeFromLatest(latest);
-    fetchGroupPrice("칠흑", start, end, setChilheukTableState);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chilheukView, chilheukState.labels]);
-
-  useEffect(() => {
-    if (eternelView !== "table") return;
-    if (!eternelState.labels.length) return;
-
-    const latest = eternelState.labels[eternelState.labels.length - 1];
-    const { start, end } = getTableRangeFromLatest(latest);
-    fetchGroupPrice("에테르넬", start, end, setEternelTableState);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eternelView, eternelState.labels]);
-
-  useEffect(() => {
-    if (seedView !== "table") return;
-    if (!seedRingState.labels.length) return;
-
-    const latest = seedRingState.labels[seedRingState.labels.length - 1];
-    const { start, end } = getTableRangeFromLatest(latest);
-    fetchGroupPrice("시드링", start, end, setSeedTableState);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedView, seedRingState.labels]);
-
-  // ✅ 첫 진입이 "표"이므로, 데이터 로딩 후 표용 8일치도 바로 가져오게 처리
-  useEffect(() => {
-    if (chilheukView === "table" && chilheukState.labels.length) {
-      const latest = chilheukState.labels[chilheukState.labels.length - 1];
-      const { start, end } = getTableRangeFromLatest(latest);
-      fetchGroupPrice("칠흑", start, end, setChilheukTableState);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chilheukState.labels.length]);
-
-  useEffect(() => {
-    if (eternelView === "table" && eternelState.labels.length) {
-      const latest = eternelState.labels[eternelState.labels.length - 1];
-      const { start, end } = getTableRangeFromLatest(latest);
-      fetchGroupPrice("에테르넬", start, end, setEternelTableState);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eternelState.labels.length]);
-
-  useEffect(() => {
-    if (seedView === "table" && seedRingState.labels.length) {
-      const latest = seedRingState.labels[seedRingState.labels.length - 1];
-      const { start, end } = getTableRangeFromLatest(latest);
-      fetchGroupPrice("시드링", start, end, setSeedTableState);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seedRingState.labels.length]);
+  const challengerSections = CHALLENGER_GROUPS.map((cfg) =>
+    usePriceSectionState({
+      apiPath: cfg.apiPath,
+      itemNames: cfg.itemNames,
+      colorFor,
+    })
+  );
 
   // ====== 2) 마켓 데이터 ======
+  const formatDate = (d: Date) => d.toISOString().slice(0, 10);
+
   const fetchMarket = (item: MarketItem) => {
+    if (item === "솔 에르다 조각(챌1)") {
+      const end = formatDate(new Date());
+      const startD = new Date();
+      startD.setDate(startD.getDate() - 29);
+      const start = formatDate(startD);
+
+      axios
+        .get("/api/challenger_price", {
+          params: {
+            startDate: start,
+            endDate: end,
+            names: "솔 에르다 조각",
+          },
+        })
+        .then((res) => {
+          const rows: PriceRow[] = res.data.data || [];
+          const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+          const points: MesoPoint[] = sorted.map((r) => ({ date: r.date, price: r.price }));
+
+          const todayPrice = points.length ? points[points.length - 1].price : null;
+          const prevPrice = points.length >= 2 ? points[points.length - 2].price : null;
+
+          const changePercent =
+            todayPrice != null && prevPrice != null && prevPrice !== 0
+              ? ((todayPrice - prevPrice) / prevPrice) * 100
+              : null;
+
+          setSelectedMarketItem(item);
+          setMarketHistory(points);
+          setMarketToday(todayPrice);
+          setMarketChange(changePercent);
+          setMarketLatestDate(points.length ? points[points.length - 1].date : null);
+        })
+        .catch((err) => {
+          console.error("challenger market fetch error:", err);
+        });
+
+      return;
+    }
+
     axios
       .get(`/api/etc?item=${encodeURIComponent(item)}`)
       .then((res) => {
@@ -681,6 +911,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchMarket("메소 마켓");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -716,11 +947,7 @@ export default function Home() {
       });
   }, []);
 
-  const isPriceLoading =
-    !chilheukState.labels.length &&
-    !eternelState.labels.length &&
-    !seedRingState.labels.length;
-
+  const isPriceLoading = normalSections.every((s) => !s.chartState.labels.length);
   if (isPriceLoading) {
     return (
       <main className={styles.page}>
@@ -729,30 +956,7 @@ export default function Home() {
     );
   }
 
-  // ====== 모두 선택/해제 계산 (그래프용) ======
-  const chilheukLabels = chilheukState.datasets.map((ds) => ds.label);
-  const eternelLabels = eternelState.datasets.map((ds) => ds.label);
-  const seedRingLabels = seedRingState.datasets.map((ds) => ds.label);
-
-  const chilheukAllHidden =
-    chilheukLabels.length > 0 && chilheukLabels.every((lbl) => hiddenLabels.has(lbl));
-  const eternelAllHidden =
-    eternelLabels.length > 0 && eternelLabels.every((lbl) => hiddenLabels.has(lbl));
-  const seedRingAllHidden =
-    seedRingLabels.length > 0 && seedRingLabels.every((lbl) => hiddenLabels.has(lbl));
-
-  const toggleAllForLabels = (labels: string[]) => {
-    setHiddenLabels((prev) => {
-      const next = new Set(prev);
-      const allHidden = labels.length > 0 && labels.every((lbl) => next.has(lbl));
-
-      if (allHidden) labels.forEach((lbl) => next.delete(lbl));
-      else labels.forEach((lbl) => next.add(lbl));
-      return next;
-    });
-  };
-
-  // 🔍 드/메 페이지로 이동하는 공통 검색 함수
+  // 🔍 드/메 페이지로 이동
   const handleCharacterSearch = () => {
     const trimmed = searchName.trim();
     if (!trimmed) return;
@@ -846,7 +1050,7 @@ export default function Home() {
   const latestNotice = latestByType("공지");
 
   // 공통 버튼 스타일
-  const headerMiniBtn: React.CSSProperties = {
+  const headerMiniBtn: CSSProperties = {
     fontSize: "0.78rem",
     padding: "6px 10px",
     borderRadius: 999,
@@ -861,9 +1065,23 @@ export default function Home() {
   const summaryTitleText =
     selectedMarketItem === "메소 마켓"
       ? "메소 마켓 시세"
+      : selectedMarketItem === "솔 에르다 조각(챌1)"
+      ? isMobile
+        ? "다조(챌1) 시세"
+        : "솔 에르다 조각(챌1) 시세"
       : isMobile
       ? "다조 시세"
       : "솔 에르다 조각 시세";
+
+  // ✅ 요약카드 전일 대비 색: 칠흑 표(ChangeWithPrice)와 동일 규칙
+  const marketChangeColor =
+    marketChange == null
+      ? undefined
+      : marketChange > 0
+      ? "#ef4444"
+      : marketChange < 0
+      ? "#3b82f6"
+      : "#cbd5e1";
 
   return (
     <main className={styles.page}>
@@ -871,10 +1089,7 @@ export default function Home() {
       <section className={`${styles.hero} md:h-80 md:flex md:justify-center md:items-center`}>
         <div className={styles["hero-bg"]} />
         <div className={`${styles["hero-content"]} md:w-full`}>
-          <h1 className={`${styles["hero-title"]} text-2xl md:text-4xl md:-mt-4`}>
-            📈 MAPLE ECONOMY
-          </h1>
-
+          <h1 className={`${styles["hero-title"]} text-2xl md:text-4xl md:-mt-4`}>📈 MAPLE ECONOMY</h1>
           <p className={styles["hero-sub"]}>메이플의 각종 경제지표를 한 눈에.</p>
 
           <div className={`${styles["search-box"]} mx-auto md:mt-12`}>
@@ -914,7 +1129,20 @@ export default function Home() {
                 전체 보기
               </button>
             </div>
-            <ul className={styles["news-list"]}>
+
+            {/* ✅ (2) 모바일은 기존 유지 / 데스크톱만 간격 확대 */}
+            <ul
+              className={styles["news-list"]}
+              style={
+                isMobile
+                  ? undefined
+                  : {
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 16, // 데스크톱에서만 간격 확대(기존 대비 2배 체감)
+                    }
+              }
+            >
               {latestNews && (
                 <li>
                   <span className={`${styles["news-tag"]} ${styles["tag-gold"]}`}>뉴스</span>
@@ -969,13 +1197,7 @@ export default function Home() {
           <div className={`${styles.card} ${styles["summary-card"]}`}>
             <div
               className={styles["summary-header-row"]}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                // ✅ 한 줄 유지 + 넘치면 title 쪽이 줄어들게
-                minWidth: 0,
-              }}
+              style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
             >
               <img
                 src={
@@ -988,7 +1210,6 @@ export default function Home() {
                 style={{ flex: "0 0 auto" }}
               />
 
-              {/* ✅ title은 남는 공간을 먹되, 길면 ... 처리(버튼은 밀리지 않음) */}
               <div
                 className={styles["summary-title"]}
                 style={{
@@ -1004,37 +1225,35 @@ export default function Home() {
                 {summaryTitleText}
               </div>
 
-              {/* ✅ 우측 버튼은 항상 우측 고정(줄어들지 않게) */}
-              <div
-                style={{
-                  marginLeft: "auto",
-                  display: "flex",
-                  gap: 6,
-                  flex: "0 0 auto",
-                  flexShrink: 0,
-                }}
-              >
-                {["메소 마켓", "솔 에르다 조각"].map((label) => (
-                  <button
-                    key={label}
-                    className={[
-                      styles["news-filter-btn"],
-                      styles["market-toggle-btn"],
-                      selectedMarketItem === label ? styles["news-filter-btn-active"] : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onClick={() => fetchMarket(label as MarketItem)}
-                    style={{
-                      fontSize: isMobile ? "0.72rem" : undefined,
-                      padding: isMobile ? "6px 8px" : undefined,
-                      whiteSpace: "nowrap",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
+              <div style={{ marginLeft: "auto", display: "flex", gap: 6, flex: "0 0 auto", flexShrink: 0 }}>
+                {(["메소 마켓", "솔 에르다 조각", "솔 에르다 조각(챌1)"] as MarketItem[])
+                  .filter((label) => label !== selectedMarketItem)
+                  .map((label) => {
+                    const buttonText =
+                      label === "솔 에르다 조각"
+                        ? "다조"
+                        : label === "솔 에르다 조각(챌1)"
+                        ? "다조(챌1)"
+                        : label;
+
+                    return (
+                      <button
+                        key={label}
+                        className={[styles["news-filter-btn"], styles["market-toggle-btn"]]
+                          .filter(Boolean)
+                          .join(" ")}
+                        onClick={() => fetchMarket(label)}
+                        style={{
+                          fontSize: isMobile ? "0.72rem" : undefined,
+                          padding: isMobile ? "6px 8px" : undefined,
+                          whiteSpace: "nowrap",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {buttonText}
+                      </button>
+                    );
+                  })}
               </div>
             </div>
 
@@ -1052,19 +1271,8 @@ export default function Home() {
             <div className={styles["summary-row"]}>
               <div className={styles["summary-label"]}>전일 대비</div>
               <div
-                className={[
-                  styles["summary-value"],
-                  styles.change,
-                  marketChange != null
-                    ? marketChange > 0
-                      ? styles.up
-                      : marketChange < 0
-                      ? styles.down
-                      : ""
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
+                className={[styles["summary-value"], styles.change].filter(Boolean).join(" ")}
+                style={{ color: marketChangeColor }}
               >
                 {marketChange == null
                   ? "—"
@@ -1089,293 +1297,107 @@ export default function Home() {
 
         {/* 그래프/표 섹션 */}
         <div className={styles["charts-wrapper"]}>
-          {/* 칠흑 세트 */}
-          <section className={`${styles.card} ${styles["chart-card"]}`}>
-            <div className={styles["chart-header"]}>
-              <div className={styles["chart-title-wrap"]}>
-                <img
-                  src="/item_image/item_혼돈의 칠흑 장신구 상자.png"
-                  alt="칠흑"
-                  className={styles["set-icon"]}
-                />
-                <h2>칠흑 시세</h2>
-
-                {chilheukView === "chart" && (
-                  <button
-                    type="button"
-                    style={{
-                      marginLeft: 8,
-                      fontSize: "0.75rem",
-                      padding: "4px 10px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(148,163,184,0.7)",
-                      background: "transparent",
-                      color: "#e5e7eb",
-                      cursor: "pointer",
-                    }}
-                    onClick={() => toggleAllForLabels(chilheukLabels)}
-                  >
-                    {chilheukAllHidden ? "모두 선택" : "모두 해제"}
-                  </button>
-                )}
+          {/* ✅ 챌린저스 접기바 */}
+          <section
+            className={styles.card}
+            style={{
+              padding: 14,
+              borderRadius: 18,
+              border: "1px solid rgba(148,163,184,0.25)",
+              background: "rgba(15, 23, 42, 0.55)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <img src="/item_image/item_챌린저스 서버.png" alt="챌린저스" className={styles["set-icon"]} />
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: isMobile ? "1rem" : "1.05rem",
+                  color: "#e5e7eb",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                챌린저스 시세
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  type="button"
-                  style={headerMiniBtn}
-                  onClick={() => setChilheukView((v) => (v === "chart" ? "table" : "chart"))}
-                >
-                  {chilheukView === "chart" ? "표" : "그래프"}
-                </button>
-
-                <button className={styles["toggle-btn"]} onClick={() => setShowChilheuk((p) => !p)}>
-                  {showChilheuk ? "접기 ▲" : "펼치기 ▼"}
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                <button className={styles["toggle-btn"]} onClick={() => setShowChallengers((p) => !p)}>
+                  {showChallengers ? "접기 ▲" : "펼치기 ▼"}
                 </button>
               </div>
             </div>
 
-            {chilheukView === "chart" && (
-              <ItemLegend datasets={chilheukState.datasets} hiddenLabels={hiddenLabels} onToggle={handleToggleLabel} />
-            )}
-
-            {showChilheuk && (
-              <>
-                {chilheukView === "chart" ? (
-                  <Line
-                    data={{
-                      labels: chilheukState.labels,
-                      datasets: chilheukState.datasets.filter((ds) => !hiddenLabels.has(ds.label)),
-                    }}
-                    options={lineOptions}
+            {showChallengers && (
+              <div style={{ marginTop: 12, display: "grid", gap: 14 }}>
+                {CHALLENGER_GROUPS.map((cfg, idx) => (
+                  <PriceSection
+                    key={cfg.id}
+                    cfg={cfg}
+                    section={challengerSections[idx]}
+                    isMobile={isMobile}
+                    hiddenLabels={hiddenLabels}
+                    onToggleLabel={handleToggleLabel}
+                    headerMiniBtn={headerMiniBtn}
+                    lineOptions={lineOptions}
+                    formatToEok={formatToEok}
+                    toggleAllForLabels={toggleAllForLabels}
                   />
-                ) : (
-                  <PriceTable groupState={chilheukTableState} formatToEok={formatToEok} isMobile={isMobile} />
-                )}
-              </>
-            )}
-
-            {chilheukView === "chart" && (
-              <div className="mt-8 w-full flex justify-end gap-3">
-                <div>
-                  <label className="mr-4">시작 날짜:</label>
-                  <input
-                    type="date"
-                    value={chilheukDateStart}
-                    onChange={(e) => setchilheukDateStart(e.target.value)}
-                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="mr-4">종료 날짜:</label>
-                  <input
-                    type="date"
-                    value={chilheukDateEnd}
-                    onChange={(e) => setchilheukDateEnd(e.target.value)}
-                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                ))}
               </div>
             )}
           </section>
 
-          {/* 에테르넬 세트 */}
-          <section className={`${styles.card} ${styles["chart-card"]}`}>
-            <div className={styles["chart-header"]}>
-              <div className={styles["chart-title-wrap"]}>
-                <img
-                  src="/item_image/item_맹세의 에테르넬 방어구 상자.png"
-                  alt="에테르넬"
-                  className={styles["set-icon"]}
-                />
-                <h2>에테르넬 시세</h2>
-
-                {eternelView === "chart" && (
-                  <button
-                    type="button"
-                    style={{
-                      marginLeft: 8,
-                      fontSize: "0.75rem",
-                      padding: "4px 10px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(148,163,184,0.7)",
-                      background: "transparent",
-                      color: "#e5e7eb",
-                      cursor: "pointer",
-                    }}
-                    onClick={() => toggleAllForLabels(eternelLabels)}
-                  >
-                    {eternelAllHidden ? "모두 선택" : "모두 해제"}
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  type="button"
-                  style={headerMiniBtn}
-                  onClick={() => setEternelView((v) => (v === "chart" ? "table" : "chart"))}
-                >
-                  {eternelView === "chart" ? "표" : "그래프"}
-                </button>
-
-                <button className={styles["toggle-btn"]} onClick={() => setShowEternel((p) => !p)}>
-                  {showEternel ? "접기 ▲" : "펼치기 ▼"}
-                </button>
-              </div>
-            </div>
-
-            {eternelView === "chart" && (
-              <ItemLegend datasets={eternelState.datasets} hiddenLabels={hiddenLabels} onToggle={handleToggleLabel} />
-            )}
-
-            {showEternel && (
-              <>
-                {eternelView === "chart" ? (
-                  <Line
-                    data={{
-                      labels: eternelState.labels,
-                      datasets: eternelState.datasets.filter((ds) => !hiddenLabels.has(ds.label)),
-                    }}
-                    options={lineOptions}
-                  />
-                ) : (
-                  <PriceTable groupState={eternelTableState} formatToEok={formatToEok} isMobile={isMobile} />
-                )}
-              </>
-            )}
-
-            {eternelView === "chart" && (
-              <div className="mt-8 w-full flex justify-end gap-3">
-                <div>
-                  <label className="mr-4">시작 날짜:</label>
-                  <input
-                    type="date"
-                    value={eternelDateStart}
-                    onChange={(e) => setEternelDateStart(e.target.value)}
-                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="mr-4">종료 날짜:</label>
-                  <input
-                    type="date"
-                    value={eternelDateEnd}
-                    onChange={(e) => setEternelDateEnd(e.target.value)}
-                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* 시드링 세트 */}
-          <section className={`${styles.card} ${styles["chart-card"]}`}>
-            <div className={styles["chart-header"]}>
-              <div className={styles["chart-title-wrap"]}>
-                <img
-                  src="/item_image/item_백옥의 보스 반지 상자.png"
-                  alt="시드링"
-                  className={styles["set-icon"]}
-                />
-                <h2>시드링 시세</h2>
-
-                {seedView === "chart" && (
-                  <button
-                    type="button"
-                    style={{
-                      marginLeft: 8,
-                      fontSize: "0.75rem",
-                      padding: "4px 10px",
-                      borderRadius: 999,
-                      border: "1px solid rgba(148,163,184,0.7)",
-                      background: "transparent",
-                      color: "#e5e7eb",
-                      cursor: "pointer",
-                    }}
-                    onClick={() => toggleAllForLabels(seedRingLabels)}
-                  >
-                    {seedRingAllHidden ? "모두 선택" : "모두 해제"}
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  type="button"
-                  style={headerMiniBtn}
-                  onClick={() => setSeedView((v) => (v === "chart" ? "table" : "chart"))}
-                >
-                  {seedView === "chart" ? "표" : "그래프"}
-                </button>
-
-                <button className={styles["toggle-btn"]} onClick={() => setShowSeed((p) => !p)}>
-                  {showSeed ? "접기 ▲" : "펼치기 ▼"}
-                </button>
-              </div>
-            </div>
-
-            {seedView === "chart" && (
-              <ItemLegend datasets={seedRingState.datasets} hiddenLabels={hiddenLabels} onToggle={handleToggleLabel} />
-            )}
-
-            {showSeed && (
-              <>
-                {seedView === "chart" ? (
-                  <Line
-                    data={{
-                      labels: seedRingState.labels,
-                      datasets: seedRingState.datasets.filter((ds) => !hiddenLabels.has(ds.label)),
-                    }}
-                    options={lineOptions}
-                  />
-                ) : (
-                  <PriceTable groupState={seedTableState} formatToEok={formatToEok} isMobile={isMobile} />
-                )}
-              </>
-            )}
-
-            {seedView === "chart" && (
-              <div className="mt-8 w-full flex justify-end gap-3">
-                <div>
-                  <label className="mr-4">시작 날짜:</label>
-                  <input
-                    type="date"
-                    value={seedRingDateStart}
-                    onChange={(e) => setSeedRingDateStart(e.target.value)}
-                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="mr-4">종료 날짜:</label>
-                  <input
-                    type="date"
-                    value={seedRingDateEnd}
-                    onChange={(e) => setSeedRingDateEnd(e.target.value)}
-                    className="bg-gray-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            )}
-          </section>
+          {/* ✅ 기존 3개(중복 제거 렌더링) */}
+          {NORMAL_GROUPS.map((cfg, idx) => (
+            <PriceSection
+              key={cfg.id}
+              cfg={cfg}
+              section={normalSections[idx]}
+              isMobile={isMobile}
+              hiddenLabels={hiddenLabels}
+              onToggleLabel={handleToggleLabel}
+              headerMiniBtn={headerMiniBtn}
+              lineOptions={lineOptions}
+              formatToEok={formatToEok}
+              toggleAllForLabels={toggleAllForLabels}
+            />
+          ))}
         </div>
       </section>
 
       {/* 마켓 그래프 모달 */}
       {mesoModalOpen && (
         <div className={styles["modal-backdrop"]} onClick={() => setMesoModalOpen(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles["modal-header"]}>
+          <div
+            className={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxHeight: "85vh",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div className={styles["modal-header"]} style={{ flex: "0 0 auto" }}>
               <span>
                 {selectedMarketItem === "메소 마켓"
                   ? "메소 마켓 시세 (일별)"
+                  : selectedMarketItem === "솔 에르다 조각(챌1)"
+                  ? "솔 에르다 조각(챌1) 시세 (일별)"
                   : "솔 에르다 조각 시세 (일별)"}
               </span>
               <button className={styles["modal-close"]} onClick={() => setMesoModalOpen(false)}>
                 ✕
               </button>
             </div>
-            <div className={styles["modal-body"]}>
+
+            <div
+              className={`${styles["modal-body"]} dark-scroll`}
+              style={{
+                flex: "1 1 auto",
+                overflowY: "auto",
+                minHeight: 0,
+              }}
+            >
               {marketHistory.length === 0 ? (
                 <div className={styles["modal-empty"]}>데이터가 없습니다.</div>
               ) : (
@@ -1404,15 +1426,23 @@ export default function Home() {
       {/* 뉴스 히스토리 모달 */}
       {newsModalOpen && (
         <div className={styles["modal-backdrop"]} onClick={() => setNewsModalOpen(false)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles["modal-header"]}>
+          <div
+            className={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxHeight: "85vh",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div className={styles["modal-header"]} style={{ flex: "0 0 auto" }}>
               <span>메이플 경제 뉴스 히스토리</span>
               <button className={styles["modal-close"]} onClick={() => setNewsModalOpen(false)}>
                 ✕
               </button>
             </div>
 
-            <div className={styles["news-filter-row"]}>
+            <div className={styles["news-filter-row"]} style={{ flex: "0 0 auto" }}>
               {["전체", "뉴스", "업데이트", "공지"].map((t) => (
                 <button
                   key={t}
@@ -1429,7 +1459,14 @@ export default function Home() {
               ))}
             </div>
 
-            <div className={styles["modal-body"]}>
+            <div
+              className={`${styles["modal-body"]} dark-scroll`}
+              style={{
+                flex: "1 1 auto",
+                overflowY: "auto",
+                minHeight: 0,
+              }}
+            >
               <div className={styles["news-history-list"]}>
                 {newsItems
                   .filter((n) => newsFilter === "전체" || n.type === newsFilter)
@@ -1459,6 +1496,33 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* ✅ (1) 다크 톤 스크롤바 스타일 */}
+      <style jsx global>{`
+        .dark-scroll {
+          scrollbar-width: thin; /* Firefox */
+          scrollbar-color: rgba(148, 163, 184, 0.35) rgba(15, 23, 42, 0.25);
+        }
+
+        .dark-scroll::-webkit-scrollbar {
+          width: 10px;
+        }
+
+        .dark-scroll::-webkit-scrollbar-track {
+          background: rgba(15, 23, 42, 0.25);
+          border-radius: 999px;
+        }
+
+        .dark-scroll::-webkit-scrollbar-thumb {
+          background: rgba(148, 163, 184, 0.28);
+          border-radius: 999px;
+          border: 2px solid rgba(15, 23, 42, 0.35);
+        }
+
+        .dark-scroll::-webkit-scrollbar-thumb:hover {
+          background: rgba(148, 163, 184, 0.4);
+        }
+      `}</style>
     </main>
   );
 }

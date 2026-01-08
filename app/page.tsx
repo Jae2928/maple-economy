@@ -1061,16 +1061,16 @@ export default function Home() {
     whiteSpace: "nowrap",
   };
 
-  // ✅ 요약카드 제목 (모바일에서만 '다조 시세'로)
+  // ✅ 요약카드 제목 (모바일에서만 '솔에조 시세'로)
   const summaryTitleText =
     selectedMarketItem === "메소 마켓"
       ? "메소 마켓 시세"
       : selectedMarketItem === "솔 에르다 조각(챌1)"
       ? isMobile
-        ? "다조(챌1) 시세"
+        ? "솔에조(챌1) 시세"
         : "솔 에르다 조각(챌1) 시세"
       : isMobile
-      ? "다조 시세"
+      ? "솔에조 시세"
       : "솔 에르다 조각 시세";
 
   // ✅ 요약카드 전일 대비 색: 칠흑 표(ChangeWithPrice)와 동일 규칙
@@ -1231,9 +1231,9 @@ export default function Home() {
                   .map((label) => {
                     const buttonText =
                       label === "솔 에르다 조각"
-                        ? "다조"
+                        ? "솔에조"
                         : label === "솔 에르다 조각(챌1)"
-                        ? "다조(챌1)"
+                        ? "솔에조(챌1)"
                         : label;
 
                     return (

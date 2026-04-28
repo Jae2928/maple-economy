@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     // DB 최신 날짜 기준으로 강제 설정
     const latest = new Date(latestRow.date);
     const prev = new Date(latest);
-    prev.setDate(prev.getDate() - 6); // 최근 7일 (포함)
+    prev.setDate(prev.getDate() - 7); // 최근 8일 (포함)
 
     startDate = prev.toISOString().slice(0, 10);
     endDate = latest.toISOString().slice(0, 10);

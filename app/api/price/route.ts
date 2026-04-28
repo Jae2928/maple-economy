@@ -15,49 +15,51 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
 
-    let startDate = searchParams.get("startDate"); // YYYY-MM-DD
-    let endDate = searchParams.get("endDate");     // YYYY-MM-DD
-    const namesParam = searchParams.get("names");  // "아이템1,아이템2,..."
+    // 프론트에서 넘어온 값은 참고만 하고, 실제로는 덮어씀
+    let startDate = searchParams.get("startDate");
+    let endDate = searchParams.get("endDate");
+    const namesParam = searchParams.get("names");
 
-    //startDate / endDate 둘 다 없으면 → DB 최신 날짜 기준으로 7일 계산
-    if (!startDate && !endDate) {
-      const { data: latestRow, error: latestError } = await supabase
-        .from("price_history")
-        .select("date")
-        .order("date", { ascending: false })
-        .limit(1)
-        .single();
+    // 항상 DB 기준 최신 날짜 조회
+    const { data: latestRow, error: latestError } = await supabase
+      .from("price_history")
+      .select("date")
+      .order("date", { ascending: false })
+      .limit(1)
+      .single();
 
-      if (latestError) {
-        console.error("[/api/price] latest date fetch error:", latestError);
-        return NextResponse.json(
-          { error: latestError.message },
-          { status: 500 }
-        );
-      }
-
-      if (latestRow?.date) {
-        const latest = new Date(latestRow.date);
-        const prev = new Date(latest);
-        prev.setDate(prev.getDate() - 6); // 최근 7일 (포함)
-
-        startDate = prev.toISOString().slice(0, 10);
-        endDate = latest.toISOString().slice(0, 10);
-      }
+    if (latestError) {
+      console.error("[/api/price] latest date fetch error:", latestError);
+      return NextResponse.json(
+        { error: latestError.message },
+        { status: 500 }
+      );
     }
+
+    if (!latestRow?.date) {
+      return NextResponse.json(
+        { error: "No data in price_history table" },
+        { status: 500 }
+      );
+    }
+
+    // DB 최신 날짜 기준으로 강제 설정
+    const latest = new Date(latestRow.date);
+    const prev = new Date(latest);
+    prev.setDate(prev.getDate() - 6); // 최근 7일 (포함)
+
+    startDate = prev.toISOString().slice(0, 10);
+    endDate = latest.toISOString().slice(0, 10);
+
+    console.log("[/api/price] final date range:", startDate, "~", endDate);
 
     // 기본 쿼리
     let query = supabase
       .from("price_history")
       .select("name, price, date");
 
-    // 🔹 날짜 범위 필터
-    if (startDate) {
-      query = query.gte("date", startDate);
-    }
-    if (endDate) {
-      query = query.lte("date", endDate);
-    }
+    // 🔹 날짜 필터 (무조건 적용됨)
+    query = query.gte("date", startDate).lte("date", endDate);
 
     // 🔹 name IN (...) 필터
     if (namesParam) {
@@ -71,7 +73,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    //날짜 기준 정렬 (오래된 → 최신)
+    // 날짜 오름차순 정렬
     query = query.order("date", { ascending: true });
 
     const { data, error } = await query;

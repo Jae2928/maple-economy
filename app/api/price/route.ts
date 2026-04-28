@@ -7,24 +7,51 @@ export const runtime = "nodejs";
 
 // 🔹 서버 전용 Supabase 클라이언트
 const supabase = createClient(
-  process.env.SUPABASE_URL!, // vercel–supabase 연동으로 생긴 값
-  process.env.SUPABASE_ANON_KEY! // anon key (읽기만 할 거면 이걸로 충분)
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
 );
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
 
-    const startDate = searchParams.get("startDate"); // YYYY-MM-DD
-    const endDate = searchParams.get("endDate");     // YYYY-MM-DD
-    const namesParam = searchParams.get("names");    // "아이템1,아이템2,..."
+    let startDate = searchParams.get("startDate"); // YYYY-MM-DD
+    let endDate = searchParams.get("endDate");     // YYYY-MM-DD
+    const namesParam = searchParams.get("names");  // "아이템1,아이템2,..."
+
+    //startDate / endDate 둘 다 없으면 → DB 최신 날짜 기준으로 7일 계산
+    if (!startDate && !endDate) {
+      const { data: latestRow, error: latestError } = await supabase
+        .from("price_history")
+        .select("date")
+        .order("date", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (latestError) {
+        console.error("[/api/price] latest date fetch error:", latestError);
+        return NextResponse.json(
+          { error: latestError.message },
+          { status: 500 }
+        );
+      }
+
+      if (latestRow?.date) {
+        const latest = new Date(latestRow.date);
+        const prev = new Date(latest);
+        prev.setDate(prev.getDate() - 6); // 최근 7일 (포함)
+
+        startDate = prev.toISOString().slice(0, 10);
+        endDate = latest.toISOString().slice(0, 10);
+      }
+    }
 
     // 기본 쿼리
     let query = supabase
       .from("price_history")
       .select("name, price, date");
 
-    // 🔹 날짜 범위 필터 (있을 때만 적용)
+    // 🔹 날짜 범위 필터
     if (startDate) {
       query = query.gte("date", startDate);
     }
@@ -32,7 +59,7 @@ export async function GET(req: NextRequest) {
       query = query.lte("date", endDate);
     }
 
-    // 🔹 name IN (...) 필터 (있을 때만 적용)
+    // 🔹 name IN (...) 필터
     if (namesParam) {
       const names = namesParam
         .split(",")
@@ -44,7 +71,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 🔹 날짜 기준 정렬 (오래된 → 최신)
+    //날짜 기준 정렬 (오래된 → 최신)
     query = query.order("date", { ascending: true });
 
     const { data, error } = await query;
